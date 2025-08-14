@@ -68,7 +68,7 @@ export function AppSidebar() {
         }
     };
     return (
-        <Sidebar collapsible="icon" data-testid="app-sidebar">
+        <Sidebar collapsible="icon" className="bg-background" data-testid="app-sidebar">
             <SidebarHeader className="h-15 border-b">
                 {open ? (
                     <Link to={PATHS.CHAT} className="ml-2.5 py-3.5 inline-block">
@@ -136,11 +136,17 @@ export function AppSidebar() {
                                     className="h-9 flex flex-1 w-full justify-between items-center gap-1 px-2 cursor-pointer hover:no-underline"
                                 >
                                     <span>
-                                        {currentUser &&
-                                        currentUser.first_name &&
-                                        currentUser.last_name
-                                            ? `${currentUser.first_name} ${currentUser.last_name}`
-                                            : 'User'}
+                                        {(() => {
+                                            const displayName =
+                                                currentUser &&
+                                                currentUser.first_name &&
+                                                currentUser.last_name
+                                                    ? `${currentUser.first_name} ${currentUser.last_name}`
+                                                    : currentUser?.email || 'User';
+                                            return displayName.length > 20
+                                                ? `${displayName.slice(0, 20)}...`
+                                                : displayName;
+                                        })()}
                                     </span>
                                     <ChevronDown className="h-4 w-4" />
                                 </Button>

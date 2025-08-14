@@ -17,6 +17,7 @@ from typing import cast
 
 import pulumi
 import pulumi_datarobot
+from datarobot_pulumi_utils.pulumi import export
 from datarobot_pulumi_utils.pulumi.custom_model_deployment import CustomModelDeployment
 from datarobot_pulumi_utils.pulumi.stack import PROJECT_NAME
 from datarobot_pulumi_utils.schema.custom_models import (
@@ -115,16 +116,36 @@ if len(os.environ.get("DATAROBOT_DEFAULT_EXECUTION_ENVIRONMENT", "")) > 0:
             + agent_retrieval_agent_resource_name,
         )
 else:
-    agent_retrieval_agent_execution_environment = pulumi_datarobot.ExecutionEnvironment(
-        resource_name="Talk to My Docs Agent Execution Environment [docker_context] "
-        + agent_retrieval_agent_resource_name,
-        programming_language="python",
-        description="Talk to My Docs Execution Environment [agent docker_context]",
-        docker_context_path=os.path.join(
-            str(agent_retrieval_agent_application_path), "docker_context"
-        ),
-        use_cases=["customModel", "notebook"],
-    )
+    if os.path.exists(
+        os.path.join(
+            str(agent_retrieval_agent_application_path), "docker_context.tar.gz"
+        )
+    ):
+        pulumi.info(
+            "Using prebuilt Dockerfile docker_context.tar.gz to run the execution environment"
+        )
+        agent_retrieval_agent_execution_environment = pulumi_datarobot.ExecutionEnvironment(
+            resource_name="Talk to My Docs Execution Environment [docker_context] "
+            + agent_retrieval_agent_resource_name,
+            programming_language="python",
+            description="Talk to My Docs Execution Environment [agent docker_context]",
+            docker_image=os.path.join(
+                str(agent_retrieval_agent_application_path), "docker_context.tar.gz"
+            ),
+            use_cases=["customModel", "notebook"],
+        )
+    else:
+        pulumi.info("Using docker_context folder to compile the execution environment")
+        agent_retrieval_agent_execution_environment = pulumi_datarobot.ExecutionEnvironment(
+            resource_name="Talk to My Docs Agent Execution Environment [docker_context] "
+            + agent_retrieval_agent_resource_name,
+            programming_language="python",
+            description="Talk to My Docs Execution Environment [agent docker_context]",
+            docker_context_path=os.path.join(
+                str(agent_retrieval_agent_application_path), "docker_context"
+            ),
+            use_cases=["customModel", "notebook"],
+        )
 
 agent_retrieval_agent_custom_model_files = get_custom_model_files(
     str(os.path.join(str(agent_retrieval_agent_application_path), "custom_model"))
@@ -215,6 +236,10 @@ if os.environ.get("AGENT_DEPLOY") != "0":
 
     pulumi.export(
         "Agent Deployment ID " + agent_retrieval_agent_resource_name,
+        agent_retrieval_agent_agent_deployment.id,
+    )
+    export(
+        agent_retrieval_agent_application_name.upper() + "_DEPLOYMENT_ID",
         agent_retrieval_agent_agent_deployment.id,
     )
     pulumi.export(

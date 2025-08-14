@@ -29,6 +29,8 @@ export interface KnowledgeBaseSchema {
     created_at: string;
     updated_at: string;
     owner_uuid: string;
+    is_public: boolean;
+    can_edit: boolean;
     files: KnowledgeBaseFileSchema[];
 }
 
@@ -41,12 +43,14 @@ export interface KnowledgeBaseCreateRequest {
     description: string;
     path?: string;
     token_count?: number;
+    is_public: boolean;
 }
 
 export interface KnowledgeBaseUpdateRequest {
     title?: string;
     description?: string;
     path?: string;
+    is_public?: boolean;
 }
 
 export interface KnowledgeBaseListResponse {

@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
 import { deleteChatById, getAllChats, getMessages, getLlmCatalog, postMessage } from './requests';
 import { chatKeys } from './keys';
 import { IChatMessage, IPostMessageContext, IUserMessage, IChat } from './types';
@@ -46,6 +47,10 @@ export const usePostMessage = ({ chatId }: { chatId?: string }) => {
             const { message } = data;
             const messagesKey = chatKeys.messages(chatId);
 
+            if (!chatId) {
+                queryClient.setQueryData(messagesKey, []);
+            }
+
             const previousMessages = queryClient.getQueryData<IChatMessage[]>(messagesKey) || [];
 
             const newUserMessage: IChatMessage = {
@@ -57,11 +62,12 @@ export const usePostMessage = ({ chatId }: { chatId?: string }) => {
 
             return { previousMessages, messagesKey };
         },
-        onError: (_error, _variables, context) => {
+        onError: (error, _variables, context) => {
             // Restore previous messages
             if (context?.previousMessages && context?.messagesKey) {
                 queryClient.setQueryData(context.messagesKey, context.previousMessages);
             }
+            toast.error(error?.message || 'Failed to send message');
         },
         onSuccess: data => {
             // Set the chat messages data directly in the cache to avoid loading state
@@ -69,6 +75,9 @@ export const usePostMessage = ({ chatId }: { chatId?: string }) => {
                 chatKeys.messages(data.chat_id),
                 (oldData = []) => [...oldData, data]
             );
+            if (!chatId) {
+                queryClient.invalidateQueries({ queryKey: chatKeys.chatList() });
+            }
             navigate(`/chat/${data.chat_id}`);
         },
     });

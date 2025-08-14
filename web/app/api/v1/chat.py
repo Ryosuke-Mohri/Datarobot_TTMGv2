@@ -166,6 +166,7 @@ async def _get_files(
 async def _get_knowledge_base(
     knowledge_base_uuid_str: str | None,
     knowledge_base_repo: "KnowledgeBaseRepository",
+    current_user: "User",
 ) -> "KnowledgeBase | None":
     """Get Knowledge Base by UUID."""
     if not knowledge_base_uuid_str:
@@ -179,7 +180,8 @@ async def _get_knowledge_base(
     knowledge_base_obj: KnowledgeBase | None = None
     if knowledge_base_uuid:
         knowledge_base_obj = await knowledge_base_repo.get_knowledge_base(
-            knowledge_base_uuid=knowledge_base_uuid
+            current_user,
+            knowledge_base_uuid=knowledge_base_uuid,
         )
         if not knowledge_base_obj:
             raise HTTPException(status_code=400, detail="Knowledge Base not found.")
@@ -208,7 +210,6 @@ async def chat_completion(
     knowledge_base_repo: KnowledgeBaseRepository = (
         request.app.state.deps.knowledge_base_repo
     )
-
     # Get combined files from both sources
     files = await _get_files(
         current_user=current_user,
@@ -218,13 +219,10 @@ async def chat_completion(
     knowledge_base = await _get_knowledge_base(
         knowledge_base_uuid_str=knowledge_base_uuid_str,
         knowledge_base_repo=knowledge_base_repo,
+        current_user=current_user,
     )
-    knowledge_base_files: list[File] = []
-    if knowledge_base and current_user.id:
-        knowledge_base_files = await file_repo.get_kb_files_by_owner(
-            owner_id=current_user.id,
-            knowledge_base_id=knowledge_base.id,
-        )
+    knowledge_base_files = knowledge_base.files if knowledge_base is not None else []
+
     # Combine both sets of files
     combined_files = files + knowledge_base_files
 
@@ -317,6 +315,7 @@ async def chat_agent_completion(
     knowledge_base = await _get_knowledge_base(
         knowledge_base_uuid_str=knowledge_base_uuid_str,
         knowledge_base_repo=knowledge_base_repo,
+        current_user=current_user,
     )
     knowledge_base_schema = None
     if knowledge_base:
@@ -343,7 +342,6 @@ async def chat_agent_completion(
             error=None,
         )
     )
-
     if agent_deployment_url:
         # If the agent deployment URL is provided, use it directly
         deployment_chat_base_url = agent_deployment_url

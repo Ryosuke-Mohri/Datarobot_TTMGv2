@@ -17,6 +17,7 @@ from typing import Final
 
 import pulumi
 import pulumi_datarobot as datarobot
+from datarobot_pulumi_utils.pulumi import export
 from datarobot_pulumi_utils.pulumi.stack import PROJECT_NAME
 
 # these configs are expected in the web application
@@ -76,7 +77,7 @@ app_runtime_parameters += [
         value=oauth_providers_output,
     )
 ]
-pulumi.export("DATAROBOT_OAUTH_PROVIDERS", oauth_providers_output)
+export("DATAROBOT_OAUTH_PROVIDERS", oauth_providers_output)
 
 # or use authlib-based OAuth
 # if google_client_id and google_client_secret:

@@ -23,6 +23,9 @@ export const KnowledgeBases = () => {
     const deleteBaseMutation = useDeleteKnowledgeBase();
     const [deletingBaseId, setDeletingBaseId] = useState<string | null>(null);
 
+    // Only show bases the user can edit on this page
+    const editableBases = bases.filter(base => base.can_edit);
+
     const handleDeleteBase = async (baseUuid: string) => {
         if (
             confirm(
@@ -70,9 +73,9 @@ export const KnowledgeBases = () => {
         );
     }
 
-    if (bases.length === 0) {
+    if (editableBases.length === 0) {
         return (
-            <div test-id="knowledge-empty-state" className="flex justify-center max-h-screen">
+            <div data-testid="knowledge-empty-state" className="flex justify-center max-h-screen">
                 <div className="p-6 pt-48 max-w-2xl w-full items-center flex-col justify-center flex max-h-screen">
                     <img
                         src={noBasesPreview}
@@ -88,7 +91,7 @@ export const KnowledgeBases = () => {
                     </p>
 
                     <Button
-                        test-id="create-knowledge-base-button"
+                        data-testid="create-knowledge-base-button"
                         onClick={() => navigate(ROUTES.ADD_KNOWLEDGE_BASE)}
                         className="h-9 flex cursor-pointer"
                     >
@@ -111,22 +114,22 @@ export const KnowledgeBases = () => {
             </div>
 
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {bases.map((base: KnowledgeBaseSchema) => (
+                {editableBases.map((base: KnowledgeBaseSchema) => (
                     <div
-                        test-id="knowledge-base-card"
+                        data-testid="knowledge-base-card"
                         key={base.uuid}
                         className="border border-gray-700 rounded-lg p-6 hover:shadow-lg transition-shadow bg-card hover:bg-gray-750 flex flex-col h-full"
                     >
                         <div className="flex justify-between items-start mb-4">
                             <div className="flex-1">
                                 <h3
-                                    test-id="knowledge-base-title"
+                                    data-testid="knowledge-base-title"
                                     className="font-semibold text-lg mb-2 line-clamp-2 text-white"
                                 >
                                     {base.title}
                                 </h3>
                                 <p
-                                    test-id="knowledge-base-description"
+                                    data-testid="knowledge-base-description"
                                     className="text-gray-300 text-sm line-clamp-3 mb-3"
                                 >
                                     {base.description}
@@ -135,7 +138,7 @@ export const KnowledgeBases = () => {
                             <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
                                     <Button
-                                        test-id="knowledge-base-menu-button"
+                                        data-testid="knowledge-base-menu-button"
                                         variant="ghost"
                                         size="sm"
                                         className="h-8 w-8 p-0 text-gray-400 hover:text-white hover:bg-gray-700"
@@ -155,7 +158,7 @@ export const KnowledgeBases = () => {
                                     className="bg-gray-800 border-gray-700"
                                 >
                                     <DropdownMenuItem
-                                        test-id="knowledge-base-edit-button"
+                                        data-testid="knowledge-base-edit-button"
                                         onClick={() =>
                                             navigate(`${ROUTES.EDIT_KNOWLEDGE_BASE}/${base.uuid}`)
                                         }
@@ -165,7 +168,7 @@ export const KnowledgeBases = () => {
                                         Edit
                                     </DropdownMenuItem>
                                     <DropdownMenuItem
-                                        test-id="knowledge-base-delete-button"
+                                        data-testid="knowledge-base-delete-button"
                                         onClick={() => handleDeleteBase(base.uuid)}
                                         className="cursor-pointer text-red-400 hover:text-red-300 hover:bg-gray-700"
                                         disabled={deletingBaseId === base.uuid}
@@ -180,7 +183,7 @@ export const KnowledgeBases = () => {
                         <div className="space-y-2 text-sm text-gray-400 flex-grow">
                             <div className="flex items-center gap-2">
                                 <FileText className="h-4 w-4" />
-                                <span test-id="knowledge-base-file-count">
+                                <span data-testid="knowledge-base-file-count">
                                     {base.files.length} file{base.files.length !== 1 ? 's' : ''} •{' '}
                                     {base.token_count.toLocaleString()} tokens
                                 </span>

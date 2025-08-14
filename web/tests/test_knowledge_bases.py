@@ -12,10 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import uuid as uuidpkg
+from unittest.mock import AsyncMock, MagicMock
 
 from fastapi.testclient import TestClient
 
-from app.knowledge_bases import KnowledgeBase, KnowledgeBaseCreate
+from app.deps import Deps
+from app.knowledge_bases import KnowledgeBase, KnowledgeBaseCreate, KnowledgeBaseUpdate
+from app.users.user import User
 
 
 def test_path_auto_generation_logic() -> None:
@@ -107,9 +110,7 @@ def test_create_knowledge_base_without_auth(client: TestClient) -> None:
 
 def test_get_knowledge_base_without_auth(client: TestClient) -> None:
     """Test that getting a base requires authentication."""
-    import uuid
-
-    test_uuid = str(uuid.uuid4())
+    test_uuid = str(uuidpkg.uuid4())
 
     response = client.get(f"/api/v1/knowledge-bases/{test_uuid}")
     assert response.status_code == 401
@@ -117,9 +118,7 @@ def test_get_knowledge_base_without_auth(client: TestClient) -> None:
 
 def test_delete_knowledge_base_without_auth(client: TestClient) -> None:
     """Test that deleting a base requires authentication."""
-    import uuid
-
-    test_uuid = str(uuid.uuid4())
+    test_uuid = str(uuidpkg.uuid4())
 
     response = client.delete(f"/api/v1/knowledge-bases/{test_uuid}")
     assert response.status_code == 401
@@ -140,3 +139,95 @@ def test_knowledge_base_creation_validation(client: TestClient) -> None:
 
     response = client.post("/api/v1/knowledge-bases/", json=invalid_data)
     assert response.status_code == 401
+
+
+def test_update_knowledge_base_without_auth(client: TestClient) -> None:
+    test_uuid = str(uuidpkg.uuid4())
+    response = client.put(f"/api/v1/knowledge-bases/{test_uuid}", json={"title": "New"})
+    assert response.status_code == 401
+
+
+def test_update_knowledge_base_success(
+    authenticated_client: TestClient, deps: Deps
+) -> None:
+    """Test successful knowledge base update."""
+    # Prepare existing KB mock
+    kb_uuid = uuidpkg.uuid4()
+    OwnerMock = MagicMock(spec=User)
+    owner = OwnerMock()
+    owner.uuid = uuidpkg.UUID("ef7155bf-af78-44ba-bc2a-f38e2b8e6ff8")
+    kb = KnowledgeBase(
+        id=1,
+        uuid=kb_uuid,
+        title="Old Title",
+        description="Old Description",
+        token_count=0,
+        path="1/old-path",
+        owner_id=1,
+        owner=owner,
+    )
+    deps.knowledge_base_repo.get_knowledge_base = AsyncMock(return_value=kb)  # type: ignore[method-assign]
+
+    updated_kb = KnowledgeBase(
+        id=1,
+        uuid=kb_uuid,
+        title="New Title",
+        description="New Description",
+        token_count=0,
+        path="1/new-path",
+        owner_id=1,
+        owner=owner,
+    )
+
+    async def _update_kb(
+        knowledge_base_id: int, owner_id: int, update: KnowledgeBaseUpdate
+    ) -> KnowledgeBase:
+        for field, value in update.model_dump(exclude_unset=True).items():
+            if value is not None:
+                setattr(updated_kb, field, value)
+        return updated_kb
+
+    deps.knowledge_base_repo.update_knowledge_base = AsyncMock(side_effect=_update_kb)  # type: ignore[method-assign]
+
+    payload = {
+        "title": "New Title",
+        "description": "New Description",
+        "path": "1/new-path",
+    }
+    r = authenticated_client.put(f"/api/v1/knowledge-bases/{kb_uuid}", json=payload)
+    assert r.status_code == 200
+    data = r.json()
+    assert data["title"] == "New Title"
+    assert data["description"] == "New Description"
+    assert data["path"] == "1/new-path"
+
+
+def test_update_knowledge_base_not_found(
+    authenticated_client: TestClient, deps: Deps
+) -> None:
+    kb_uuid = uuidpkg.uuid4()
+    deps.knowledge_base_repo.get_knowledge_base = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    r = authenticated_client.put(
+        f"/api/v1/knowledge-bases/{kb_uuid}", json={"title": "X"}
+    )
+    assert r.status_code == 404
+
+
+def test_update_knowledge_base_forbidden(
+    authenticated_client: TestClient, deps: Deps
+) -> None:
+    kb_uuid = uuidpkg.uuid4()
+    kb = KnowledgeBase(
+        id=2,
+        uuid=kb_uuid,
+        title="Title",
+        description="Desc",
+        token_count=0,
+        path="2/path",
+        owner_id=999,  # different owner
+    )
+    deps.knowledge_base_repo.get_knowledge_base = AsyncMock(return_value=kb)  # type: ignore[method-assign]
+    r = authenticated_client.put(
+        f"/api/v1/knowledge-bases/{kb_uuid}", json={"title": "New"}
+    )
+    assert r.status_code == 403

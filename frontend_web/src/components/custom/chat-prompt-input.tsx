@@ -1,4 +1,4 @@
-import { useCallback, useState, useRef } from 'react';
+import { useCallback, useState, useRef, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 
 import { Textarea } from '@/components/ui/textarea';
@@ -49,9 +49,10 @@ export function ChatPromptInput({
     const { mutateAsync } = usePostMessage({ chatId });
     const navigate = useNavigate();
     const { selectedLlmModel, selectedKnowledgeBase, setSelectedKnowledgeBase } = useAppState();
-    const { data: bases = [] } = useListKnowledgeBases();
+    const { data: bases = [], isFetched: isKnowledgeBasesFetched } = useListKnowledgeBases();
     const [files, setFiles] = useState<FileSchema[]>();
     const [isConnectedSourcesOpen, setIsConnectedSourcesOpen] = useState(false);
+    const [isComposing, setIsComposing] = useState(false);
     const { mutate } = useFileUploadMutation({
         onSuccess: data => {
             setFiles(data);
@@ -60,6 +61,16 @@ export function ChatPromptInput({
             console.error('Error uploading file:', error);
         },
     });
+
+    useEffect(() => {
+        if (
+            isKnowledgeBasesFetched &&
+            selectedKnowledgeBase &&
+            !bases.some(base => base.uuid === selectedKnowledgeBase.uuid)
+        ) {
+            setSelectedKnowledgeBase(null);
+        }
+    }, [selectedKnowledgeBase, bases, isKnowledgeBasesFetched, setSelectedKnowledgeBase]);
 
     const { mutate: mutateExternalFile, isPending: isExternalFileUploading } =
         useExternalFileUploadMutation({
@@ -129,7 +140,7 @@ export function ChatPromptInput({
     }, [mutateAsync, message, setMessage, setPendingMessage, files, selectedKnowledgeBase]);
 
     const handleEnterPress = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
+        if (e.key === 'Enter' && !e.shiftKey && !isComposing) {
             e.preventDefault();
             handleSubmit();
         }
@@ -163,6 +174,8 @@ export function ChatPromptInput({
                         'dark:bg-muted border-gray-700'
                     )}
                     onKeyDown={handleEnterPress}
+                    onCompositionStart={() => setIsComposing(true)}
+                    onCompositionEnd={() => setIsComposing(false)}
                     data-testid="chat-prompt-input-textarea"
                 />
                 <div className="w-full p-1 border border-t-0 border-gray-700">
@@ -196,7 +209,7 @@ export function ChatPromptInput({
                                         Upload from connected source
                                     </DropdownMenuItem>
                                     {/* Knowledge base selection for all models */}
-                                    {bases.length > 0 ? (
+                                    {bases.length > 0 || selectedKnowledgeBase ? (
                                         [
                                             // Add "None" option to deselect knowledge base
                                             <DropdownMenuItem

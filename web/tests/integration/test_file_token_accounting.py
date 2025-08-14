@@ -97,7 +97,8 @@ class TestFileTokenAccounting:
 
             # Refresh the knowledge base from the database
             updated_kb = await kb_repo.get_knowledge_base(
-                knowledge_base_id=knowledge_base.id
+                knowledge_base_id=knowledge_base.id,
+                user=session_user,
             )
             assert updated_kb is not None, "Knowledge base should exist after encoding"
 

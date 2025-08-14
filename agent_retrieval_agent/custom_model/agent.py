@@ -40,6 +40,7 @@ class MyAgent:
         api_base: Optional[str] = None,
         model: Optional[str] = None,
         verbose: Optional[Union[bool, str]] = True,
+        timeout: Optional[int] = 90,
         **kwargs: Any,
     ):
         """Initializes the MyAgent class with API key, base URL, model, and verbosity settings.
@@ -53,6 +54,8 @@ class MyAgent:
                 Defaults to None.
             verbose: Optional[Union[bool, str]]: Whether to enable verbose logging.
                 Accepts boolean or string values ("true"/"false"). Defaults to True.
+            timeout: Optional[int]: How long to wait for the agent to respond.
+                Defaults to 90 seconds.
             **kwargs: Any: Additional keyword arguments passed to the agent.
                 Contains any parameters received in the CompletionCreateParams.
 
@@ -63,6 +66,7 @@ class MyAgent:
         self.api_base = api_base or os.environ.get("DATAROBOT_ENDPOINT")
         self.model = model
         self.config = Config()
+        self.timeout = timeout
         if isinstance(verbose, str):
             self.verbose = verbose.lower() == "true"
         elif isinstance(verbose, bool):
@@ -108,6 +112,7 @@ class MyAgent:
             model=model,
             api_base=api_base,
             api_key=self.api_key,
+            timeout=self.timeout,
         )
 
     @property
@@ -168,7 +173,7 @@ class MyAgent:
             allow_delegation=False,
             verbose=self.verbose,
             llm=self.model_factory(
-                model="datarobot/vertex_ai/gemini-2.0-flash-001",
+                model="datarobot/azure/o4-mini",
                 use_deployment=True,
             ),
         )
@@ -207,7 +212,7 @@ class MyAgent:
             allow_delegation=False,
             verbose=self.verbose,
             llm=self.model_factory(
-                model="datarobot/vertex_ai/gemini-2.0-flash-001",
+                model="datarobot/azure/gpt-4o-2024-11-20",
                 use_deployment=True,
             ),
         )
@@ -239,7 +244,7 @@ class MyAgent:
             allow_delegation=False,
             verbose=self.verbose,
             llm=self.model_factory(
-                model="datarobot/bedrock/anthropic.claude-3-5-sonnet-20240620-v1:0",
+                model="bedrock/anthropic.claude-3-7-sonnet-20250219-v1:0",
                 use_deployment=True,
             ),
         )
@@ -281,7 +286,7 @@ class MyAgent:
             allow_delegation=False,
             verbose=self.verbose,
             llm=self.model_factory(
-                model="datarobot/vertex_ai/gemini-2.0-flash-001",
+                model="azure/gpt-4o-2024-11-20",
                 use_deployment=True,
             ),
         )
@@ -329,7 +334,7 @@ class MyAgent:
             allow_delegation=False,
             verbose=self.verbose,
             llm=self.model_factory(
-                model="datarobot/vertex_ai/gemini-2.0-flash-001",
+                model="datarobot/azure/gpt-4o-2024-11-20",
                 use_deployment=True,
             ),
         )
@@ -396,7 +401,7 @@ class MyAgent:
 
     def run(
         self, completion_create_params: CompletionCreateParams
-    ) -> tuple[list[Any], CrewOutput]:
+    ) -> tuple[CrewOutput, list[Any]]:
         """Run the agent with the provided completion parameters.
 
         [THIS METHOD IS REQUIRED FOR THE AGENT TO WORK WITH DRUM SERVER]
@@ -410,7 +415,7 @@ class MyAgent:
             completion_create_params (CompletionCreateParams): The parameters for
                 the completion request, which includes the input topic and other settings.
         Returns:
-            tuple[list[Any], CrewOutput]: A tuple containing a list of messages (events) and the crew output.
+            tuple[CrewOutput, list[Any]]: A tuple containing a list of messages (events) and the crew output.
 
         """
         # Example helper for extracting inputs as a json from the completion_create_params["messages"]
@@ -445,4 +450,9 @@ class MyAgent:
                 events.append(AIMessage(content=response_text))
         else:
             events = None
-        return events, crew_output
+        # The `events` variable is used to compute agentic metrics
+        # (e.g. Task Adherence, Agent Goal Accuracy, Agent Goal Accuracy with Reference,
+        # Tool Call Accuracy).
+        # If you are not interested in these metrics, you can also return None instead.
+        # This will reduce the size of the response significantly.
+        return crew_output, events

@@ -43,7 +43,6 @@ def get_datarobot_ctx(request: Request) -> DRAppCtx:
     Returns the scoped DataRobot API key or external (non-DataRobot) user email from the request headers propagated by DataRobot
     """
     config: Config = request.app.state.deps.config
-
     scoped_api_key = request.headers.get(
         "X-DATAROBOT-API-KEY", config.test_user_api_key
     )

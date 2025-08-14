@@ -14,7 +14,6 @@ tasks:
     desc: "🔨 Run the development server"
     env:
       TEST_USER_EMAIL: "developer@example.com"
-      TEST_USER_API_KEY: "{.DATAROBOT_API_TOKEN}"
     cmds:
       - echo "🔨 Starting development server"
       - uv run fastapi dev --port 8080

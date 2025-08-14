@@ -23,6 +23,7 @@ import { useAppState } from '@/state';
 
 import './App.css';
 import { useLlmCatalog } from '@/api/chat/hooks';
+import { Toaster } from './components/ui/toast';
 
 function App() {
     const { data: availableLlmCatalog, isLoading, isFetched } = useLlmCatalog();
@@ -60,6 +61,7 @@ function App() {
                         <>
                             <AppHeader />
                             <Pages />
+                            <Toaster />
                         </>
                     )}
                 </div>

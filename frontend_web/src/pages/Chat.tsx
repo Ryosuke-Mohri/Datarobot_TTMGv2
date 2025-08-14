@@ -1,4 +1,4 @@
-import { useRef, useCallback } from 'react';
+import { useRef, useCallback, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import drLogo from '@/assets/DataRobot_white.svg';
 
@@ -15,6 +15,7 @@ const Chat = () => {
     const { chatId } = useParams<{ chatId: string }>();
     const { data: messages = [] } = useChatMessages(chatId);
     const hasPendingMessageRequest = useRef<boolean>(false);
+    const containerRef = useRef<HTMLDivElement>(null);
 
     const setPendingMessage = useCallback(
         (value: boolean) => {
@@ -23,7 +24,19 @@ const Chat = () => {
         [hasPendingMessageRequest]
     );
 
-    if (messages.length === 0) {
+    useEffect(() => {
+        const timeoutId = setTimeout(() => {
+            containerRef.current?.scrollTo({
+                top: containerRef.current.scrollHeight, // Scroll to the bottom
+                behavior: 'smooth',
+            });
+        }, 300); // Delay to ensure all messages are rendered
+
+        return () => clearTimeout(timeoutId);
+    }, [messages]);
+
+    //If there are no messages or if chatId is not defined, show the initial prompt input
+    if (messages.length === 0 || (!chatId && !hasPendingMessageRequest.current)) {
         return (
             <div className="content-center justify-items-center w-full h-full">
                 <div className="flex">
@@ -49,8 +62,11 @@ const Chat = () => {
             className="flex flex-col items-center w-full min-h-[calc(100vh-4rem)]"
             data-testid="chat-conversation-view"
         >
-            <ScrollArea className="flex-1 w-full overflow-auto mb-5 scroll">
-                <div className="w-3xl justify-self-center">
+            <ScrollArea
+                className="flex-1 w-full overflow-auto mb-5 scroll"
+                scrollViewportRef={containerRef}
+            >
+                <div className="justify-self-center px-4 w-full">
                     {messages.map((message: IChatMessage, index: number) =>
                         message.role === 'user' ? (
                             <ChatUserMessage
@@ -76,7 +92,7 @@ const Chat = () => {
             <ChatPromptInput
                 isPendingMessage={hasPendingMessageRequest.current}
                 setPendingMessage={setPendingMessage}
-                classNames="h-24 w-3xl self-end self-center mb-10 p-0"
+                classNames="w-full self-end self-center mb-2 py-0 px-4"
             />
         </div>
     );

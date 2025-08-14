@@ -29,8 +29,9 @@ from app.knowledge_bases import (
     KnowledgeBase,
     KnowledgeBaseCreate,
     KnowledgeBaseRepository,
+    KnowledgeBaseUpdate,
 )
-from app.users.user import User
+from app.users.user import User, UserRepository
 
 logger = logging.getLogger(name=__name__)
 
@@ -83,12 +84,15 @@ class KnowledgeBaseSchema(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     owner_uuid: uuidpkg.UUID
+    is_public: bool
+    can_edit: bool
 
     files: list[KnowledgeBaseFileSchema] = Field(default_factory=list)
 
     @classmethod
     def from_knowledge_base(
         cls,
+        current_user: User,
         knowledge_base: KnowledgeBase,
         owner_uuid: uuidpkg.UUID | None = None,
         files_with_content: dict[str, dict[int, str]] | None = None,
@@ -98,9 +102,9 @@ class KnowledgeBaseSchema(BaseModel):
             try:
                 owner_uuid = knowledge_base.owner.uuid
             except Exception:
-                # If owner relationship is not available, we'll need to pass it explicitly
+                logger.exception("No owner found for knowledge base")
                 raise ValueError(
-                    "owner_uuid must be provided when base.owner is not accessible"
+                    "owner_uuid must be provided when knowledge_base.owner is not accessible"
                 )
 
         # Create file schemas with optional encoded content
@@ -125,6 +129,8 @@ class KnowledgeBaseSchema(BaseModel):
             created_at=knowledge_base.created_at,
             updated_at=knowledge_base.updated_at,
             owner_uuid=owner_uuid,
+            is_public=knowledge_base.is_public,
+            can_edit=owner_uuid == current_user.uuid,
             files=file_schemas,
         )
 
@@ -133,11 +139,20 @@ class KnowledgeBaseListSchema(BaseModel):
     knowledge_bases: list[KnowledgeBaseSchema]
 
 
-class BaseCreateRequestSchema(BaseModel):
+class KnowledgeBaseCreateRequestSchema(BaseModel):
     title: str = Field(..., min_length=1, max_length=255)
     description: str = Field(..., min_length=1, max_length=1000)
     path: str | None = Field(default=None, min_length=1, max_length=500)
     token_count: int = Field(default=0, ge=0)
+    is_public: bool = Field(default=False)
+
+
+class KnowledgeBaseUpdateRequestSchema(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=255)
+    description: str | None = Field(default=None, min_length=1, max_length=1000)
+    path: str | None = Field(default=None, min_length=1, max_length=500)
+    token_count: int | None = Field(default=None, ge=0)
+    is_public: bool | None = Field(default=None)
 
 
 knowledge_base_router = APIRouter(tags=["Knowledge Bases"])
@@ -151,9 +166,9 @@ async def get_knowledge_base_schema(
     file_repo: FileRepository | None = None,
 ) -> KnowledgeBaseSchema:
     knowledge_base = await knowledge_base_repo.get_knowledge_base(
-        knowledge_base_uuid=knowledge_base_uuid
+        current_user,
+        knowledge_base_uuid=knowledge_base_uuid,
     )
-
     if not knowledge_base:
         err = ErrorSchema(
             code=ErrorCodes.UNKNOWN_ERROR,
@@ -163,15 +178,8 @@ async def get_knowledge_base_schema(
             status_code=status.HTTP_404_NOT_FOUND, detail=err.model_dump()
         )
 
-    # Verify ownership
-    if knowledge_base.owner_id != current_user.id:
-        err = ErrorSchema(
-            code=ErrorCodes.UNKNOWN_ERROR,
-            message="Access denied",
-        )
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail=err.model_dump()
-        )
+    # Rely on repository-level visibility filtering (owner or public).
+    # If the repo returns None, we return 404 above; no separate API-level 403.
 
     # Get encoded content for files if requested
     files_with_content = None
@@ -189,6 +197,7 @@ async def get_knowledge_base_schema(
                     files_with_content[str(file.uuid)] = encoded_content
 
     return KnowledgeBaseSchema.from_knowledge_base(
+        current_user,
         knowledge_base,
         owner_uuid=current_user.uuid,
         files_with_content=files_with_content,
@@ -200,11 +209,12 @@ async def list_knowledge_bases(
     request: Request, auth_ctx: AuthCtx[Metadata] = Depends(must_get_auth_ctx)
 ) -> KnowledgeBaseListSchema:
     """
-    List all knowledge bases owned by the current user.
+    List all knowledge bases accessible to the current user (owned by them or public).
     """
-    knowledge_base_repo = request.app.state.deps.knowledge_base_repo
-    user_repo = request.app.state.deps.user_repo
-
+    knowledge_base_repo: KnowledgeBaseRepository = (
+        request.app.state.deps.knowledge_base_repo
+    )
+    user_repo: UserRepository = request.app.state.deps.user_repo
     # Get current user's UUID
     current_user = await user_repo.get_user(user_id=int(auth_ctx.user.id))
     if not current_user:
@@ -214,27 +224,48 @@ async def list_knowledge_bases(
         owner_id=int(auth_ctx.user.id)
     )
 
+    # Get all unique owner IDs from the knowledge bases
+    owner_ids = {kb.owner_id for kb in knowledge_bases}
+
+    # Fetch all owners at once
+    owners = {}
+    for owner_id in owner_ids:
+        if owner_id:  # owner_id could be None in some edge cases
+            owner = await user_repo.get_user(user_id=owner_id)
+            if owner:
+                owners[owner_id] = owner
+
     return KnowledgeBaseListSchema(
         knowledge_bases=[
-            KnowledgeBaseSchema.from_knowledge_base(base, owner_uuid=current_user.uuid)
-            for base in knowledge_bases
+            KnowledgeBaseSchema.from_knowledge_base(
+                current_user=current_user,
+                knowledge_base=knowledge_base,
+                owner_uuid=owners[knowledge_base.owner_id].uuid
+                if knowledge_base.owner_id and knowledge_base.owner_id in owners
+                else None,
+            )
+            for knowledge_base in knowledge_bases
         ]
     )
 
 
 @knowledge_base_router.post(
-    "/knowledge-bases/", responses={401: {"model": ErrorSchema}}
+    "/knowledge-bases/",
+    status_code=status.HTTP_201_CREATED,
+    responses={401: {"model": ErrorSchema}},
 )
 async def create_knowledge_base(
     request: Request,
-    payload: BaseCreateRequestSchema,
+    payload: KnowledgeBaseCreateRequestSchema,
     auth_ctx: AuthCtx[Metadata] = Depends(must_get_auth_ctx),
 ) -> KnowledgeBaseSchema:
     """
     Create a new base.
     """
-    knowledge_base_repo = request.app.state.deps.knowledge_base_repo
-    user_repo = request.app.state.deps.user_repo
+    knowledge_base_repo: KnowledgeBaseRepository = (
+        request.app.state.deps.knowledge_base_repo
+    )
+    user_repo: UserRepository = request.app.state.deps.user_repo
 
     # Get current user's UUID
     current_user = await user_repo.get_user(user_id=int(auth_ctx.user.id))
@@ -246,6 +277,7 @@ async def create_knowledge_base(
         description=payload.description,
         path=payload.path,
         token_count=payload.token_count,
+        is_public=payload.is_public,
     )
 
     knowledge_base = await knowledge_base_repo.create_knowledge_base(
@@ -258,7 +290,9 @@ async def create_knowledge_base(
     )
 
     return KnowledgeBaseSchema.from_knowledge_base(
-        knowledge_base, owner_uuid=current_user.uuid
+        current_user=current_user,
+        knowledge_base=knowledge_base,
+        owner_uuid=current_user.uuid,
     )
 
 
@@ -279,9 +313,11 @@ async def get_knowledge_base(
           knowledge_base_uuid: UUID of the base to retrieve
           include_content: Whether to include encoded document content for files in the response
     """
-    knowledge_base_repo = request.app.state.deps.knowledge_base_repo
-    user_repo = request.app.state.deps.user_repo
-    file_repo = request.app.state.deps.file_repo
+    knowledge_base_repo: KnowledgeBaseRepository = (
+        request.app.state.deps.knowledge_base_repo
+    )
+    user_repo: UserRepository = request.app.state.deps.user_repo
+    file_repo: FileRepository = request.app.state.deps.file_repo
 
     # Get current user's UUID
     current_user = await user_repo.get_user(user_id=int(auth_ctx.user.id))
@@ -293,6 +329,68 @@ async def get_knowledge_base(
         current_user=current_user,
         include_content=include_content,
         file_repo=file_repo,
+    )
+
+
+@knowledge_base_router.put(
+    "/knowledge-bases/{knowledge_base_uuid}",
+    responses={401: {"model": ErrorSchema}, 404: {"model": ErrorSchema}},
+)
+async def update_knowledge_base(
+    request: Request,
+    knowledge_base_uuid: uuidpkg.UUID,
+    payload: KnowledgeBaseUpdateRequestSchema,
+    auth_ctx: AuthCtx[Metadata] = Depends(must_get_auth_ctx),
+) -> KnowledgeBaseSchema:
+    """Update a knowledge base's editable properties."""
+    knowledge_base_repo: KnowledgeBaseRepository = (
+        request.app.state.deps.knowledge_base_repo
+    )
+    user_repo: UserRepository = request.app.state.deps.user_repo
+
+    current_user = await user_repo.get_user(user_id=int(auth_ctx.user.id))
+    if not current_user:
+        raise HTTPException(status_code=401, detail="User not found")
+
+    knowledge_base = await knowledge_base_repo.get_knowledge_base(
+        current_user,
+        knowledge_base_uuid=knowledge_base_uuid,
+    )
+    if not knowledge_base:
+        err = ErrorSchema(
+            code=ErrorCodes.UNKNOWN_ERROR,
+            message=f"Knowledge base with UUID {knowledge_base_uuid} not found",
+        )
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=err.model_dump()
+        )
+
+    if knowledge_base.owner_id != int(auth_ctx.user.id):
+        err = ErrorSchema(
+            code=ErrorCodes.UNKNOWN_ERROR,
+            message="Access denied",
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail=err.model_dump()
+        )
+
+    update_model = KnowledgeBaseUpdate(**payload.model_dump(exclude_unset=True))
+    updated = await knowledge_base_repo.update_knowledge_base(
+        knowledge_base_id=knowledge_base.id if knowledge_base.id is not None else 0,
+        owner_id=int(auth_ctx.user.id),
+        update=update_model,
+    )
+    if not updated:
+        err = ErrorSchema(
+            code=ErrorCodes.UNKNOWN_ERROR,
+            message="Failed to update knowledge base or access denied",
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail=err.model_dump()
+        )
+
+    return KnowledgeBaseSchema.from_knowledge_base(
+        current_user=current_user, knowledge_base=updated
     )
 
 
@@ -309,10 +407,17 @@ async def delete_base(
     Delete a base by UUID.
     """
     knowledge_base_repo = request.app.state.deps.knowledge_base_repo
+    user_repo: UserRepository = request.app.state.deps.user_repo
+
+    # Get current user
+    current_user = await user_repo.get_user(user_id=int(auth_ctx.user.id))
+    if not current_user:
+        raise HTTPException(status_code=401, detail="User not found")
 
     # First get the base to find the ID
     knowledge_base = await knowledge_base_repo.get_knowledge_base(
-        knowledge_base_uuid=knowledge_base_uuid
+        current_user,
+        knowledge_base_uuid=knowledge_base_uuid,
     )
 
     if not knowledge_base:

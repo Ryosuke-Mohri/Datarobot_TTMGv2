@@ -1,7 +1,7 @@
 export type TFormData = {
     name: string;
     description: string;
-    visibility: string;
+    is_public: boolean;
 };
 
 export interface BaseSchema {

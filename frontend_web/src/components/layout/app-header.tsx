@@ -14,7 +14,8 @@ import {
     DropdownMenuItem,
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
-import { Search } from 'lucide-react';
+import { Search, ChevronLeft } from 'lucide-react';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 export function AppHeader() {
     const { selectedLlmModel, setSelectedLlmModel, availableLlmModels } = useAppState();
@@ -27,13 +28,16 @@ export function AppHeader() {
             item.model.toLowerCase().includes(search.toLowerCase())
     );
 
+    const isMobile = useIsMobile();
     const shouldShowLLMSelector = location.pathname.startsWith(PATHS.CHAT);
     const shouldShowCreateButton = location.pathname === PATHS.KNOWLEDGE_BASES;
-
+    const shouldShowGoToKbButton =
+        location.pathname.startsWith(PATHS.KNOWLEDGE_BASES) &&
+        location.pathname !== PATHS.KNOWLEDGE_BASES;
     return (
         <header className="h-16 px-4 flex items-center justify-between" data-testid="app-header">
             <div className="flex gap-1">
-                <SidebarTrigger className="h-9" />
+                {isMobile && <SidebarTrigger className="h-9" />}
                 {shouldShowLLMSelector && (
                     <DropdownMenu>
                         <DropdownMenuTrigger asChild data-testid="dropdown-model-selector-trigger">
@@ -75,6 +79,17 @@ export function AppHeader() {
                             </ScrollArea>
                         </DropdownMenuContent>
                     </DropdownMenu>
+                )}
+                {shouldShowGoToKbButton && (
+                    <Button
+                        variant="ghost"
+                        data-testid="go-to-kb-button"
+                        onClick={() => navigate(ROUTES.KNOWLEDGE_BASES)}
+                        className="flex items-center gap-2"
+                    >
+                        <ChevronLeft className="h-4 w-4" />
+                        Knowledge bases
+                    </Button>
                 )}
             </div>
             {shouldShowCreateButton && (

@@ -18,6 +18,6 @@ export const DEFAULT_VALUES = {
 };
 
 export const DATA_VISIBILITY = {
-    DATAROBOT: 'datarobot',
+    PUBLIC: 'public',
     PRIVATE: 'private',
 };

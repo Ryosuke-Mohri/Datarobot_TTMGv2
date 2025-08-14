@@ -13,6 +13,11 @@
 # limitations under the License.
 # isort: off
 from helpers_telemetry import *  # noqa # pylint: disable=unused-import
+import os
+
+# Some libraries collect telemetry data by default. Let's disable that.
+os.environ["RAGAS_DO_NOT_TRACK"] = "true"
+os.environ["DEEPEVAL_TELEMETRY_OPT_OUT"] = "YES"
 # isort: on
 
 
@@ -69,10 +74,6 @@ def chat(
     # Execute the agent with the inputs
     agent_result = agent.run(completion_create_params=completion_create_params)
 
-    if isinstance(agent_result, tuple):
-        return to_custom_model_response(
-            *agent_result, model=completion_create_params["model"]
-        )
     return to_custom_model_response(
-        agent_result, model=completion_create_params["model"]
+        *agent_result, model=completion_create_params["model"]
     )

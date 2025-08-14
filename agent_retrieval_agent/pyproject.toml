@@ -6,52 +6,59 @@ description = "Implementation of agent_retrieval_agent"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "click>=8.1.8",
+    "click~=8.1.8",
     "core",
-    "datarobot>=3.7.0",
-    "datarobot-drum>=1.16.17",
-    "datarobot-moderations>=11.1.18",
-    "dotenv>=0.9.9",
-    "legacy-cgi>=2.6.3",
-    "openai>=1.76.2",
-    "python-dotenv>=1.1.0",
-    "requests>=2.32.4",
-    "traceloop-sdk>=0.40.2",
-    "uvicorn>=0.22.0",
-]
-
-[project.optional-dependencies]
-agents = [
-    "crewai>=0.117.1",
-    "crewai-tools>=0.43.0",
-    "langchain>=0.3.24",
-    "langchain-community>=0.3.23",
-    "langgraph>=0.4.2",
-    "llama-index>=0.12.33",
-    "llama-index-llms-langchain>=0.6.1",
-    "llama-index-llms-litellm>=0.4.1",
-    "llama-index-llms-openai>=0.3.38",
-    "ragas @ git+https://github.com/explodinggradients/ragas@5d59549ad5ef511f621502c563bc55ac5aeb9188#subdirectory=ragas",
-]
-telemetry = [
-    "opentelemetry-api>=1.33.0",
+    "crewai>=0.140.0",
+    "crewai-tools>=0.48.0",
+    "datarobot-drum>=1.16.19",
+    "datarobot-moderations>=11.2.0",
+    "datarobot-mlops>=11.1.0",
+    "datarobot[auth]>=3.8.1",
+    "dotenv~=0.9.9",
+    "langchain-community~=0.3.23",
+    "langchain-mcp-adapters~=0.1.9",
+    "langchain~=0.3.23",
+    "langgraph~=0.4.10",
+    "langgraph-prebuilt~=0.2.3",
+    "legacy-cgi~=2.6.3",
+    "litellm>=1.72.1",
+    "llama-index-core>=0.12.41",
+    "llama-index-llms-langchain~=0.6.1",
+    "llama-index-llms-litellm~=0.4.1",
+    "llama-index-llms-openai~=0.3.38",
+    "llama-index~=0.12.33",
+    "mcp~=1.11.0",
+    "multidict~=6.5.0",
+    "onnxruntime~=1.22.0",
+    "openai~=1.76.2",
+    "opentelemetry-api>=1.33.0,<2.0.0",
     "opentelemetry-instrumentation-aiohttp-client>=0.54b0",
     "opentelemetry-instrumentation-crewai>=0.40.5",
+    "opentelemetry-instrumentation-httpx>=0.54b0",
     "opentelemetry-instrumentation-langchain>=0.40.5",
     "opentelemetry-instrumentation-llamaindex>=0.40.5",
     "opentelemetry-instrumentation-openai>=0.40.5",
     "opentelemetry-instrumentation-requests>=0.54b0",
-    "opentelemetry-instrumentation-httpx>=0.54b0",
     "opentelemetry-sdk>=1.33.0",
+    "pyarrow~=20.0.0",
+    "python-dotenv~=1.1.0",
+    "ragas @ git+https://github.com/explodinggradients/ragas@5d59549ad5ef511f621502c563bc55ac5aeb9188#subdirectory=ragas",
+    # pyarrow==21.0.0 breaks the current ragas version https://github.com/apache/arrow/issues/47155
+    "pyarrow<21.0.0",
+    "requests~=2.32.4",
+    "traceloop-sdk~=0.40.2",
+    "uvicorn~=0.35.0",
 ]
+
+[project.optional-dependencies]
 dev = [
+    "mypy~=1.15.0",
+    "pre-commit>=4.2.0",
+    "pydantic>=2.6.1",
     "pytest-cov>=6.1.1",
     "pytest>=7.4.0",
-    "ruff>=0.3.0",
-    "mypy>=1.8.0",
-    "pydantic>=2.6.1",
     "requests-mock>=1.12.1",
-    "pre-commit>=4.2.0",
+    "ruff~=0.12.0",
     "yamlfix>=1.17.0",
 ]
 
@@ -141,10 +148,17 @@ docstring-code-format = false
 # enabled.
 docstring-code-line-length = "dynamic"
 
+[tool.yamlfix]
+allow_duplicate_keys = true
+line_length = 120
+
+# Pydantic plugin must be disabled with llamaindex, see https://github.com/python/mypy/issues/15927
 [tool.mypy]
 strict = true
 python_version = "3.11"
+
 plugins = "pydantic.mypy"
+
 exclude = """(?x)(
     output/ # exclude files starting with "output"
     | deployment_.*/

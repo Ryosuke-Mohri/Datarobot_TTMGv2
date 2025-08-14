@@ -56,6 +56,7 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]
+addopts = "-p no:warnings"
 
 [tool.ruff]
 # Exclude a variety of commonly ignored directories.

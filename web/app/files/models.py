@@ -57,7 +57,9 @@ class File(SQLModel, table=True):
     # Relationships
     owner_id: int = Field(foreign_key="user.id")
 
-    knowledgebase: "KnowledgeBase" = Relationship(back_populates="files")
+    knowledgebase: "KnowledgeBase" = Relationship(
+        back_populates="files", sa_relationship_kwargs={"lazy": "selectin"}
+    )
     owner: "User" = Relationship()
 
 
@@ -126,34 +128,14 @@ class FileRepository:
         user: User,
         file_ids: list[uuidpkg.UUID] | None = None,
     ) -> list[File]:
-        """Retrieve multiple files by their UUIDs."""
+        """Retrieve multiple files by their UUIDs, or all files if file_ids is None."""
         async with self._db.session() as session:
-            if file_ids:
-                query = await session.exec(
-                    select(File).where(
-                        File.uuid.in_(file_ids),  # type: ignore[attr-defined]
-                        File.owner_id == user.id,
-                    )
-                )
-                return list(query.all())
-            return []
+            query_conditions = [File.owner_id == user.id]
 
-    async def get_kb_files_by_owner(
-        self, owner_id: int, knowledge_base_id: int | None = None
-    ) -> list[File]:
-        """Retrieve all files owned by a user, optionally filtered by base."""
-        async with self._db.session() as session:
-            if knowledge_base_id is not None:
-                query = await session.exec(
-                    select(File).where(
-                        File.owner_id == owner_id,
-                        File.knowledge_base_id == knowledge_base_id,
-                    )
-                )
-            else:
-                query = await session.exec(
-                    select(File).where(File.owner_id == owner_id)
-                )
+            if file_ids:
+                query_conditions.append(File.uuid.in_(file_ids))  # type: ignore[attr-defined]
+
+            query = await session.exec(select(File).where(*query_conditions))
             return list(query.all())
 
     async def update_file(

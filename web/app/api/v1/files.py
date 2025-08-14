@@ -36,6 +36,7 @@ from app.auth.ctx import get_access_token, must_get_auth_ctx
 from app.files import File as DBFile
 from app.files import FileCreate, FileUpdate, get_or_create_encoded_content
 from app.files.models import FileRepository
+from app.knowledge_bases import KnowledgeBaseRepository
 from app.users.identity import ProviderType
 from app.users.user import UserRepository
 from core import document_loader
@@ -320,8 +321,8 @@ async def list_files(
     """
     List all files owned by the current user, optionally filtered by knowledge base.
     """
-    file_repo = request.app.state.deps.file_repo
-    user_repo = request.app.state.deps.user_repo
+    file_repo: FileRepository = request.app.state.deps.file_repo
+    user_repo: UserRepository = request.app.state.deps.user_repo
 
     # Get current user's UUID
     current_user = await user_repo.get_user(user_id=int(auth_ctx.user.id))
@@ -330,11 +331,13 @@ async def list_files(
 
     user_uuid = current_user.uuid
 
-    knowledge_base_id = None
     if knowledge_base_uuid:
-        knowledge_base_repo = request.app.state.deps.knowledge_base_repo
+        knowledge_base_repo: KnowledgeBaseRepository = (
+            request.app.state.deps.knowledge_base_repo
+        )
         knowledge_base = await knowledge_base_repo.get_knowledge_base(
-            knowledge_base_uuid=knowledge_base_uuid
+            current_user,
+            knowledge_base_uuid=knowledge_base_uuid,
         )
         if not knowledge_base or knowledge_base.owner_id != int(auth_ctx.user.id):
             err = ErrorSchema(
@@ -342,11 +345,9 @@ async def list_files(
                 message="Knowledge Base not found or access denied",
             )
             raise HTTPException(status_code=404, detail=err.model_dump())
-        knowledge_base_id = knowledge_base.id
-
-    files = await file_repo.get_kb_files_by_owner(
-        owner_id=int(auth_ctx.user.id), knowledge_base_id=knowledge_base_id
-    )
+        files = knowledge_base.files
+    else:
+        files = await file_repo.get_files(user=current_user, file_ids=None)
 
     return FileListSchema(
         files=[FileSchema.from_file(file, owner_uuid=user_uuid) for file in files]
@@ -405,7 +406,8 @@ async def get_file(
         if file.knowledge_base_id:
             knowledge_base_repo = request.app.state.deps.knowledge_base_repo
             knowledge_base = await knowledge_base_repo.get_knowledge_base(
-                knowledge_base_id=file.knowledge_base_id
+                current_user,
+                knowledge_base_id=file.knowledge_base_id,
             )
 
         encoded_content = await get_or_create_encoded_content(
@@ -446,11 +448,17 @@ async def update_file(
         )
         raise HTTPException(status_code=404, detail=err.model_dump())
 
+    # Get current user's UUID early (needed for KB lookup below)
+    current_user = await user_repo.get_user(user_id=int(auth_ctx.user.id))
+    if not current_user:
+        raise HTTPException(status_code=401, detail="User not found")
+
     knowledge_base_id = None
     if payload.knowledge_base_uuid:
         knowledge_base_repo = request.app.state.deps.knowledge_base_repo
         knowledge_base = await knowledge_base_repo.get_knowledge_base(
-            knowledge_base_uuid=payload.knowledge_base_uuid
+            current_user,
+            knowledge_base_uuid=payload.knowledge_base_uuid,
         )
         if not knowledge_base or knowledge_base.owner_id != int(auth_ctx.user.id):
             err = ErrorSchema(
@@ -483,11 +491,6 @@ async def update_file(
             message="Failed to update file or access denied",
         )
         raise HTTPException(status_code=403, detail=err.model_dump())
-
-    # Get current user's UUID
-    current_user = await user_repo.get_user(user_id=int(auth_ctx.user.id))
-    if not current_user:
-        raise HTTPException(status_code=401, detail="User not found")
 
     return FileSchema.from_file(updated_file, owner_uuid=current_user.uuid)
 
@@ -562,7 +565,8 @@ async def upload_drive_files(
     if knowledge_base_uuid:
         knowledge_base_repo = request.app.state.deps.knowledge_base_repo
         knowledge_base = await knowledge_base_repo.get_knowledge_base(
-            knowledge_base_uuid=knowledge_base_uuid
+            current_user,
+            knowledge_base_uuid=knowledge_base_uuid,
         )
         if not knowledge_base or knowledge_base.owner_id != int(auth_ctx.user.id):
             err = ErrorSchema(
@@ -710,7 +714,8 @@ async def upload_drive_files(
                 if knowledge_base_id:
                     # Use base path for files attached to a base
                     knowledge_base = await request.app.state.deps.knowledge_base_repo.get_knowledge_base(
-                        knowledge_base_uuid=knowledge_base_uuid
+                        current_user,
+                        knowledge_base_uuid=knowledge_base_uuid,
                     )
                     file_dir = (
                         pathlib.Path(request.app.state.deps.upload_path)
@@ -807,7 +812,8 @@ async def upload_box_files(
     if knowledge_base_uuid:
         knowledge_base_repo = request.app.state.deps.knowledge_base_repo
         knowledge_base = await knowledge_base_repo.get_knowledge_base(
-            knowledge_base_uuid=knowledge_base_uuid
+            current_user,
+            knowledge_base_uuid=knowledge_base_uuid,
         )
         if not knowledge_base or knowledge_base.owner_id != int(auth_ctx.user.id):
             err = ErrorSchema(
@@ -827,7 +833,8 @@ async def upload_box_files(
         # Use base path for files attached to a base
         knowledge_base = (
             await request.app.state.deps.knowledge_base_repo.get_knowledge_base(
-                knowledge_base_uuid=knowledge_base_uuid
+                current_user,
+                knowledge_base_uuid=knowledge_base_uuid,
             )
         )
         file_dir = (
@@ -992,7 +999,8 @@ async def upload_local_files(
     if knowledge_base_uuid:
         knowledge_base_repo = request.app.state.deps.knowledge_base_repo
         knowledge_base = await knowledge_base_repo.get_knowledge_base(
-            knowledge_base_uuid=knowledge_base_uuid
+            current_user,
+            knowledge_base_uuid=knowledge_base_uuid,
         )
         if not knowledge_base or knowledge_base.owner_id != int(auth_ctx.user.id):
             err = ErrorSchema(
@@ -1031,7 +1039,8 @@ async def upload_local_files(
                 # Use base path for files attached to a base
                 knowledge_base = (
                     await request.app.state.deps.knowledge_base_repo.get_knowledge_base(
-                        knowledge_base_uuid=knowledge_base_uuid
+                        current_user,
+                        knowledge_base_uuid=knowledge_base_uuid,
                     )
                 )
                 file_dir = (

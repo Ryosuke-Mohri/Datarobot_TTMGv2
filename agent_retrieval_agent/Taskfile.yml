@@ -2,15 +2,20 @@
 # https://taskfile.dev
 version: '3'
 tasks:
-  req:
+  install:
     desc: 🛠️ [agent_retrieval_agent] Update local dependencies
     cmds:
       - echo "Updating local dependencies"
       - uv sync --all-extras
-      - cd custom_model && uv pip install -r requirements.txt
     silent: true
     aliases:
-      - install
+      - req
+  update:
+    desc: 🛠️ [agent_retrieval_agent] Update local dependencies (refresh uv locks)
+    cmds:
+      - echo "Updating local dependencies"
+      - uv sync --all-extras -U
+    silent: true
   lint:
     desc: 🧹 [agent_retrieval_agent] Lint the codebase
     cmds:
@@ -48,7 +53,7 @@ tasks:
       - uv run cli.py {{.CLI_ARGS}}
     silent: true
   dev:
-    desc: 🔨[agent_retrieval_agent] Run the development server
+    desc: 🔨 [agent_retrieval_agent] Run the development server
     env:
       TARGET_NAME: response
       FLASK_DEBUG: 1
@@ -56,3 +61,14 @@ tasks:
       - echo "Running development server on http://localhost:8842"
       - uv run drum server -cd custom_model --address localhost:8842 --target-type agenticworkflow
       - wait
+  build-docker:
+    desc: 🐳 [agent_retrieval_agent] Build the Docker image
+    cmds:
+      - echo "Compiling requirements for Docker"
+      - cd docker_context && uv pip compile --python-version 3.11 --universal --no-annotate --no-emit-index-url --output-file=requirements.txt
+        requirements.in
+      - echo "Building Docker image"
+      - cd docker_context && docker build --platform linux/amd64 -f Dockerfile -t agent_retrieval_agent:latest .
+      - echo "Saving Docker image"
+      - docker save agent_retrieval_agent:latest | gzip > docker_context.tar.gz
+    silent: true

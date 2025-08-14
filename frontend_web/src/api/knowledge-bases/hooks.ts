@@ -1,8 +1,10 @@
 import { useState } from 'react';
+import { toast } from 'sonner';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 
 import {
     uploadFiles,
+    deleteFile,
     listKnowledgeBases,
     getKnowledgeBase,
     createKnowledgeBase,
@@ -95,6 +97,24 @@ export const useListFiles = (knowledgeBaseUuid?: string) => {
             ? knowledgeBasesKeys.files(knowledgeBaseUuid)
             : knowledgeBasesKeys.allFiles,
         queryFn: ({ signal }) => listFiles(knowledgeBaseUuid, signal),
+    });
+};
+
+// Delete file
+export const useFileDelete = (knowledgeBaseUuid?: string) => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: ({ fileUuid }: { fileUuid: string }) => deleteFile(fileUuid),
+        onSuccess: () => {
+            const queryKey = knowledgeBaseUuid
+                ? knowledgeBasesKeys.files(knowledgeBaseUuid)
+                : knowledgeBasesKeys.allFiles;
+            queryClient.invalidateQueries({ queryKey });
+            toast.success('File has been successfully removed');
+        },
+        onError: error => {
+            toast.error(error?.message || 'Failed to send message');
+        },
     });
 };
 

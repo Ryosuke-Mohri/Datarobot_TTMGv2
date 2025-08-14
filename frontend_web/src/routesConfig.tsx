@@ -2,7 +2,7 @@ import { lazy } from 'react';
 import { Navigate } from 'react-router-dom';
 
 import { KnowledgeBases } from './pages/KnowledgeBases';
-import { NewKnowledgeBase } from './pages/NewKnowledgeBase';
+import { KnowledgeBaseFormPage } from './pages/KnowledgeBaseForm';
 import { SettingsLayout } from './pages/SettingsLayout';
 import { SettingsSources } from './pages/SettingsSources';
 import { SettingsChats } from './pages/SettingsChats';
@@ -17,9 +17,9 @@ export const appRoutes = [
     { path: PATHS.CHAT, element: <ChatPage /> },
     { path: PATHS.CHAT_PAGE, element: <ChatPage /> },
     { path: PATHS.KNOWLEDGE_BASES, element: <KnowledgeBases /> },
-    { path: PATHS.ADD_KNOWLEDGE_BASE, element: <NewKnowledgeBase /> },
-    { path: PATHS.EDIT_KNOWLEDGE_BASE, element: <NewKnowledgeBase /> },
-    { path: PATHS.MANAGE_KNOWLEDGE_BASE, element: <NewKnowledgeBase /> },
+    { path: PATHS.ADD_KNOWLEDGE_BASE, element: <KnowledgeBaseFormPage /> },
+    { path: PATHS.EDIT_KNOWLEDGE_BASE, element: <KnowledgeBaseFormPage /> },
+    { path: PATHS.MANAGE_KNOWLEDGE_BASE, element: <KnowledgeBaseFormPage /> },
     {
         path: PATHS.SETTINGS.ROOT,
         element: <SettingsLayout />,

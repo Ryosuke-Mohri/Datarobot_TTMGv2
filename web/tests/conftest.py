@@ -15,7 +15,7 @@ import os
 import tempfile
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Awaitable, Callable, Generator, TypeVar
+from typing import AsyncGenerator, Awaitable, Callable, Generator, TypeVar
 from unittest.mock import AsyncMock
 
 import pytest
@@ -27,17 +27,15 @@ from fastapi.testclient import TestClient
 from app import create_app
 from app.auth.api_key import APIKeyValidator, DRUser
 from app.config import Config
-from app.db import DBCtx, create_db_ctx
-from app.deps import Deps
+from app.db import DBCtx
+from app.deps import Deps, create_deps
 from app.files import FileRepository
 from app.knowledge_bases import KnowledgeBaseRepository
 from app.models.chats import ChatRepository
 from app.models.messages import MessageRepository
-from app.users.identity import AuthSchema, IdentityRepository
-from app.users.identity import Identity as AppIdentity
+from app.users.identity import AuthSchema, Identity, IdentityCreate, IdentityRepository
 from app.users.tokens import Tokens
-from app.users.user import User as AppUser
-from app.users.user import UserRepository
+from app.users.user import User, UserCreate, UserRepository
 
 
 @pytest.fixture()
@@ -78,31 +76,22 @@ def deps(config: Config) -> Deps:
 
 
 @pytest.fixture
-async def db_deps(config: Config) -> Deps:
+async def db_deps(config: Config) -> AsyncGenerator[Deps, None]:
     """
     Dependency function to provide the necessary dependencies for the FastAPI app with a real database connection.
-    This is useful for tests that require actual database interactions.
+    This is useful for tests that require actual database interactions but want mocked auth components.
     """
-    tmp_dir = Path(tempfile.mkdtemp())
-
     config.database_uri = "sqlite+aiosqlite:///:memory:"
+    upload_dir = Path(tempfile.mkdtemp())
 
-    db = await create_db_ctx(config.database_uri)
-
-    return Deps(
-        config=config,
-        db=db,
-        identity_repo=IdentityRepository(db),
-        user_repo=UserRepository(db),
-        auth=AsyncMock(spec=AsyncOAuth),
-        knowledge_base_repo=AsyncMock(spec=KnowledgeBaseRepository),
-        file_repo=AsyncMock(spec=FileRepository),
-        chat_repo=AsyncMock(spec=ChatRepository),
-        message_repo=AsyncMock(spec=MessageRepository),
-        api_key_validator=AsyncMock(spec=APIKeyValidator),
-        tokens=AsyncMock(spec=Tokens),
-        upload_path=tmp_dir,
-    )
+    # create_deps returns an async context manager, so enter it to get the Deps instance
+    async with create_deps(config) as deps_ctx:
+        # Replace auth-related components with mocks for easier testing
+        deps_ctx.auth = AsyncMock(spec=AsyncOAuth)
+        deps_ctx.api_key_validator = AsyncMock(spec=APIKeyValidator)
+        deps_ctx.tokens = AsyncMock(spec=Tokens)
+        deps_ctx.upload_path = upload_dir
+        yield deps_ctx
 
 
 @pytest.fixture
@@ -111,6 +100,17 @@ def webapp(config: Config, deps: Deps) -> FastAPI:
     Create a FastAPI app instance with the provided configuration.
     """
     return create_app(config=config, deps=deps)
+
+
+@pytest.fixture
+def db_webapp(config: Config, db_deps: Deps) -> FastAPI:
+    """
+    Create a FastAPI app instance with the provided configuration and database dependencies.
+    """
+    app = create_app(config=config, deps=db_deps)
+    app.state.deps = db_deps
+
+    return app
 
 
 @pytest.fixture
@@ -140,8 +140,173 @@ def simple_client(config: Config, deps: Deps) -> TestClient:
 
 
 @pytest.fixture
+def make_app_user() -> Callable[..., User]:
+    """Factory fixture to create AppUser instances with custom data."""
+    user_counter = 0
+
+    def _make_user(
+        email: str = "test@example.com",
+        first_name: str = "Alex",
+        last_name: str = "Smith",
+    ) -> User:
+        nonlocal user_counter
+        user_counter += 1
+        return User(
+            id=user_counter,
+            email=email,
+            first_name=first_name,
+            last_name=last_name,
+        )
+
+    return _make_user
+
+
+@pytest.fixture
+def make_app_identity() -> Callable[[User], Identity]:
+    """Factory fixture to create Identity instances for given users."""
+    identity_counter = 0
+
+    def _make_identity(user: User) -> Identity:
+        nonlocal identity_counter
+        identity_counter += 1
+        return Identity(
+            id=identity_counter,
+            type=AuthSchema.OAUTH2,
+            user_id=user.id or identity_counter,
+            provider_id="google",
+            provider_type="google",
+            provider_user_id=f"google-user-id-{identity_counter}",
+            provider_identity_id=f"provider-identity-id-{identity_counter}",
+            access_token="access-token",
+            access_token_expires_at=datetime.now(UTC) + timedelta(hours=1),
+            refresh_token="refresh-token",
+            datarobot_org_id="org-id",
+            datarobot_tenant_id="tenant-id",
+        )
+
+    return _make_identity
+
+
+class TestAPIKeyValidator:
+    """Custom API key validator for tests that maps API keys to users."""
+
+    def __init__(self) -> None:
+        self.user_map: dict[str, DRUser] = {}
+
+    def add_user(self, api_key: str, dr_user: DRUser) -> None:
+        """Register a user for a specific API key."""
+        self.user_map[api_key] = dr_user
+
+    async def validate(self, api_key: str) -> DRUser | None:
+        """Return the user for the given API key, or None if not found."""
+        return self.user_map.get(api_key)
+
+
+@pytest.fixture
+async def make_authenticated_client(
+    config: Config,
+) -> AsyncGenerator[Callable[..., Awaitable[TestClient]], None]:
+    """
+    Factory fixture to create a full unmocked in-memory DB
+    authenticated test clients with custom user data.
+    """
+
+    # Create a shared test API key validator that can map different API keys to different users
+    test_api_key_validator = TestAPIKeyValidator()
+
+    # Create the database dependencies once and share them
+    async with create_deps(config) as shared_deps:
+        # Replace the api_key_validator with our test version
+        shared_deps.api_key_validator = test_api_key_validator  # type: ignore[assignment]
+
+        # Create the app with these shared dependencies
+        app = create_app(config=config, deps=shared_deps)
+        app.state.deps = shared_deps
+
+        async def _make_client(
+            email: str = "test@datarobot.com",
+            first_name: str = "Michael",
+            last_name: str = "Smith",
+        ) -> TestClient:
+            # Create user and identity for this client
+            user_create = UserCreate(
+                email=email,
+                first_name=first_name,
+                last_name=last_name,
+            )
+            user_repo: UserRepository = shared_deps.user_repo
+            user = await user_repo.create_user(user_create)
+            if not user.id:
+                raise ValueError("User creation failed, no ID assigned.")
+
+            identity_create = IdentityCreate(
+                user_id=user.id,
+                provider_id="google",
+                provider_type="google",
+                provider_user_id=f"google-user-id-{user.id}",
+                provider_identity_id=f"provider-identity-id-{user.id}",
+                access_token="access-token",
+                access_token_expires_at=datetime.now(UTC) + timedelta(hours=1),
+                refresh_token="refresh-token",
+                datarobot_org_id="org-id",
+                datarobot_tenant_id="tenant-id",
+            )
+            identity_repo: IdentityRepository = shared_deps.identity_repo
+            identity = await identity_repo.create_identity(identity_create)
+
+            # Create a unique API key for this user
+            unique_api_key = f"test-api-key-{user.id}"
+
+            # Create a DRUser representation
+            test_dr_user = DRUser(
+                id=str(user.id),
+                org_id="org-id",
+                tenant_id="tenant-id",
+                email=user.email,
+                first_name=user.first_name,
+                last_name=user.last_name,
+                lang="en",
+                feature_flags={},
+            )
+
+            # Register this user with the test API key validator
+            test_api_key_validator.add_user(unique_api_key, test_dr_user)
+
+            client = TestClient(app)
+
+            # Set up authentication headers with the unique API key
+            client.headers.update(
+                {
+                    "X-DATAROBOT-API-KEY": unique_api_key,
+                    "X-USER-EMAIL": user.email,
+                }
+            )
+
+            # Attach user objects to the client for easy access in tests
+            client.user = user  # type: ignore[attr-defined]
+            client.dr_user = test_dr_user  # type: ignore[attr-defined]
+            client.app_identity = identity  # type: ignore[attr-defined]
+
+            return client
+
+        yield _make_client
+
+
+@pytest.fixture
+def app_user(make_app_user: Callable[..., User]) -> User:
+    return make_app_user()
+
+
+@pytest.fixture
+def app_identity(
+    app_user: User, make_app_identity: Callable[[User], Identity]
+) -> Identity:
+    return make_app_identity(app_user)
+
+
+@pytest.fixture
 def authenticated_client(
-    config: Config, deps: Deps, app_user: AppUser, app_identity: AppIdentity
+    config: Config, deps: Deps, app_user: User, app_identity: Identity
 ) -> TestClient:
     """
     Create an authenticated test client with a default user session.
@@ -168,8 +333,6 @@ def authenticated_client(
     )
 
     # Mock the API key validator to return our test user
-    from app.auth.api_key import DRUser
-
     test_dr_user = DRUser(
         id=str(app_user.id),
         org_id="test-org-id",
@@ -189,35 +352,12 @@ def authenticated_client(
     deps.identity_repo.get_by_external_user_id = AsyncMock(return_value=app_identity)  # type: ignore[method-assign]
     deps.identity_repo.upsert_identity = AsyncMock(return_value=app_identity)  # type: ignore[method-assign]
 
+    # Attach user objects to the client for easy access in tests
+    client.app_user = app_user  # type: ignore[attr-defined]
+    client.dr_user = test_dr_user  # type: ignore[attr-defined]
+    client.app_identity = app_identity  # type: ignore[attr-defined]
+
     return client
-
-
-@pytest.fixture
-def app_user() -> AppUser:
-    return AppUser(
-        id=1,
-        email="test@datarobot.com",
-        first_name="Michael",
-        last_name="Smith",
-    )
-
-
-@pytest.fixture
-def app_identity(app_user: AppUser) -> AppIdentity:
-    return AppIdentity(
-        id=1,
-        type=AuthSchema.OAUTH2,
-        user_id=app_user.id or 1,  # Handle potential None value
-        provider_id="google",
-        provider_type="google",
-        provider_user_id="google-user-id",
-        provider_identity_id="provider-identity-id",
-        access_token="access-token",
-        access_token_expires_at=datetime.now(UTC) + timedelta(hours=1),
-        refresh_token="refresh-token",
-        datarobot_org_id="org-id",
-        datarobot_tenant_id="tenant-id",
-    )
 
 
 @pytest.fixture

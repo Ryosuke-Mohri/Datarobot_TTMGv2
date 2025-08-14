@@ -92,6 +92,7 @@ def test_chat(
 
 def test_chat_agent_completion_with_invalid_knowledge_base_uuid(
     authenticated_client: TestClient,
+    deps: Deps,
 ) -> None:
     """Test that chat agent completion endpoint properly validates knowledge_base_id UUID format."""
     # Test with invalid UUID format
@@ -107,21 +108,58 @@ def test_chat_agent_completion_with_invalid_knowledge_base_uuid(
     assert "Invalid knowledge_base_id format" in response.json()["detail"]
 
     # Test with valid UUID format (should not fail on UUID validation)
-    import uuid
+    # Mock the necessary components to prevent the test from going too deep
+    test_chat = Chat(uuid=uuidpkg.uuid4(), name="New Chat")
 
-    valid_uuid = str(uuid.uuid4())
-    response = authenticated_client.post(
-        "/api/v1/chat/agent/completions",
-        json={
-            "message": "Hello, test!",
-            "model": "test-model",
-            "knowledge_base_id": valid_uuid,
-        },
-    )
-    # May still fail for other reasons (like knowledge base not found), but not due to UUID format
-    assert response.status_code != 400 or "Invalid knowledge_base_id format" not in str(
-        response.json().get("detail", "")
-    )
+    with (
+        patch.object(
+            deps.chat_repo, "create_chat", new_callable=AsyncMock
+        ) as mock_create_chat,
+        patch.object(
+            deps.knowledge_base_repo, "get_knowledge_base", new_callable=AsyncMock
+        ) as mock_get_kb,
+        patch.object(
+            deps.message_repo, "create_message", new_callable=AsyncMock
+        ) as mock_create_message,
+        patch("app.api.v1.chat.initialize_deployment") as mock_init_deployment,
+        patch("app.api.v1.chat.AsyncOpenAI") as mock_openai,
+        patch("app.api.v1.chat.augment_message_with_files") as mock_augment,
+    ):
+        mock_create_chat.return_value = test_chat
+        mock_get_kb.return_value = (
+            None  # No knowledge base found, but that's OK for this test
+        )
+        mock_create_message.return_value = MagicMock()
+        mock_init_deployment.return_value = (MagicMock(), "http://test-url")
+        mock_augment.return_value = "test message"
+
+        # Mock OpenAI client
+        mock_openai_instance = MagicMock()
+        mock_openai.return_value.__aenter__.return_value = mock_openai_instance
+
+        # Mock the chat completion response
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].message.content = "test response"
+        mock_openai_instance.chat.completions.create = AsyncMock(
+            return_value=mock_response
+        )
+
+        valid_uuid = str(uuidpkg.uuid4())
+        response = authenticated_client.post(
+            "/api/v1/chat/agent/completions",
+            json={
+                "message": "Hello, test!",
+                "model": "test-model",
+                "knowledge_base_id": valid_uuid,
+            },
+        )
+        # May still fail for other reasons (like knowledge base not found), but not due to UUID format
+        assert (
+            response.status_code != 400
+            or "Invalid knowledge_base_id format"
+            not in str(response.json().get("detail", ""))
+        )
 
 
 def test_chat_completions_with_invalid_knowledge_base_uuid(

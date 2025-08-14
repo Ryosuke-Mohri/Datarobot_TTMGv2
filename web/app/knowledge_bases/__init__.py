@@ -44,11 +44,12 @@ class KnowledgeBase(SQLModel, table=True):
     description: str = Field(..., min_length=1, max_length=1000)
     token_count: int = Field(default=0, ge=0)
     path: str = Field(..., min_length=1, max_length=500)
+    is_public: bool = Field(default=False, nullable=False)
 
     # Relationships
     owner_id: int = Field(foreign_key="user.id")
 
-    owner: "User" = Relationship()
+    owner: "User" = Relationship(sa_relationship_kwargs={"lazy": "joined"})
     files: list["File"] = Relationship(
         back_populates="knowledgebase",
         cascade_delete=True,
@@ -63,6 +64,17 @@ class KnowledgeBaseCreate(SQLModel):
     description: str = Field(..., min_length=1, max_length=1000)
     path: str | None = Field(default=None, min_length=1, max_length=500)
     token_count: int = Field(default=0, ge=0)
+    is_public: bool = Field(default=False)
+
+
+class KnowledgeBaseUpdate(SQLModel):
+    """Schema for updating an existing knowledge base. All fields optional."""
+
+    title: str | None = Field(default=None, min_length=1, max_length=255)
+    description: str | None = Field(default=None, min_length=1, max_length=1000)
+    path: str | None = Field(default=None, min_length=1, max_length=500)
+    token_count: int | None = Field(default=None, ge=0)
+    is_public: bool | None = Field(default=None)
 
 
 class KnowledgeBaseRepository:
@@ -73,15 +85,24 @@ class KnowledgeBaseRepository:
 
     async def get_knowledge_base(
         self,
+        user: "User",
         knowledge_base_id: int | None = None,
         knowledge_base_uuid: uuidpkg.UUID | None = None,
     ) -> KnowledgeBase | None:
-        """Retrieve a knowledge base by its ID or UUID."""
+        """Retrieve a knowledge base by its ID or UUID.
+
+        Args:
+            user: Current user for authorization/sharing checks
+            knowledge_base_id: Numeric DB id of the knowledge base
+            knowledge_base_uuid: UUID of the knowledge base
+        """
         if knowledge_base_id is None and knowledge_base_uuid is None:
             raise ValueError(
                 "Either knowledge_base_id or knowledge_base_uuid must be provided."
             )
-        conditions = []
+        conditions = [
+            KnowledgeBase.is_public.is_(True) | (KnowledgeBase.owner_id == user.id),  # type: ignore[attr-defined]
+        ]
         if knowledge_base_id is not None:
             conditions.append(KnowledgeBase.id == knowledge_base_id)
         if knowledge_base_uuid is not None:
@@ -94,7 +115,10 @@ class KnowledgeBaseRepository:
         """List all knowledge bases owned by a specific user."""
         async with self._db.session() as sess:
             query = await sess.exec(
-                select(KnowledgeBase).where(KnowledgeBase.owner_id == owner_id)
+                select(KnowledgeBase).where(
+                    (KnowledgeBase.owner_id == owner_id)
+                    | KnowledgeBase.is_public.is_(True)  # type: ignore[attr-defined]
+                )
             )
             return list(query.unique().all())
 
@@ -109,6 +133,7 @@ class KnowledgeBaseRepository:
             token_count=knowledge_base_data.token_count,
             owner_id=owner_id,
             path=knowledge_base_data.path or "",  # Temporary placeholder
+            is_public=knowledge_base_data.is_public,
         )
 
         async with self._db.session() as session:
@@ -144,6 +169,32 @@ class KnowledgeBaseRepository:
             await session.delete(knowledge_base)
             await session.commit()
             return True
+
+    async def update_knowledge_base(
+        self,
+        knowledge_base_id: int,
+        owner_id: int,
+        update: "KnowledgeBaseUpdate",
+    ) -> KnowledgeBase | None:
+        """Update a knowledge base (must be owned by the user)."""
+        async with self._db.session() as session:
+            query = await session.exec(
+                select(KnowledgeBase).where(
+                    KnowledgeBase.id == knowledge_base_id,
+                    KnowledgeBase.owner_id == owner_id,
+                )
+            )
+            kb = query.first()
+            if not kb:
+                return None
+
+            for field, value in update.model_dump(exclude_unset=True).items():
+                if value is not None:
+                    setattr(kb, field, value)
+            kb.updated_at = datetime.now(timezone.utc)
+            await session.commit()
+            await session.refresh(kb)
+            return kb
 
     async def update_knowledge_base_token_count(
         self, knowledge_base: KnowledgeBase, token_count: int
