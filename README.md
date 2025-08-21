@@ -29,17 +29,18 @@ If you are using DataRobot Codespaces, this is already complete for you. If not,
 - [uv](https://docs.astral.sh/uv/getting-started/installation/) (Python package manager)
 - [Pulumi](https://www.pulumi.com/docs/iac/download-install/) (infrastructure as code)
 
-
 #### Example Installation Commands
 
 For the latest and most accurate installation instructions for your platform, visit:
-* https://taskfile.dev/installation/
-* https://www.pulumi.com/docs/iac/download-install/
-* https://docs.astral.sh/uv/getting-started/installation/
+
+- https://taskfile.dev/installation/
+- https://www.pulumi.com/docs/iac/download-install/
+- https://docs.astral.sh/uv/getting-started/installation/
 
 We provide the instructions below to save you a context flip, but you're system may not meet the common expectations from these shortcut scripts:
 
 **macOS:**
+
 ```sh
 brew install go-task/tap/go-task
 brew install uv
@@ -47,6 +48,7 @@ brew install pulumi/tap/pulumi
 ```
 
 **Linux (Debian/Ubuntu/DataRobot Codespaces):**
+
 ```sh
 # Taskfile.dev
 sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -d -b ~/.local/bin
@@ -57,6 +59,7 @@ curl -fsSL https://get.pulumi.com | sh
 ```
 
 **Windows (PowerShell):**
+
 ```powershell
 # Taskfile.dev
 winget install --id=GoTask.GoTask -e
@@ -70,7 +73,7 @@ winget upgrade pulumi
 ### Clone the Repository
 
 ```sh
-git clone https://github.com/datarobot-community/talk-to-my-docs-agent
+git clone https://github.com/datarobot-community/talk-to-my-docs-agents
 cd talk-to-my-docs-agent
 ```
 
@@ -87,11 +90,13 @@ The `task` commands will automatically read the `.env` file directly to ensure e
 If you need to source those variables directly into your shell you can:
 
 **Linux/macOS:**
+
 ```sh
 set -a && source .env && set +a
 ```
 
 **Windows (PowerShell):**
+
 ```powershell
 Get-Content .env | ForEach-Object {
 	if ($_ -match '^\s*([^#][^=]*)=(.*)$') {
@@ -118,24 +123,24 @@ graph TD
     B --> C[Multi-agent CrewAI System]
     C --> D[Guarded RAG LLM Model]
     D --> E[LLM Gateway with 80+ open/closed source LLMs]
-    
+
     subgraph "DataRobot Custom Applications"
         A
         B
     end
-    
+
     subgraph "DataRobot Agentic Workflow"
         C
     end
-    
+
     subgraph "DataRobot Moderated RAG"
         D
     end
-    
+
     subgraph "DataRobot LLM Gateway"
         E
     end
-    
+
     style A fill:#f9d5d5
     style B fill:#dbeafe
     style C fill:#f9d5d5
@@ -151,14 +156,12 @@ Each component can be developed and deployed independently or as part of the ful
 
 All subprojects use [Taskfile.dev](https://taskfile.dev/#/installation) for common tasks. See each subproject’s README for details.
 
-
 ### Common Tasks
 
 The project uses [Taskfile.dev](https://taskfile.dev/#/) to manage common development tasks. Here are the most frequently used commands:
 
 - `task install-all`: Installs all dependencies for every subproject.
 - `task dev-all`: Starts all development servers and processes.
-
 
 ### Getting Started
 
@@ -224,9 +227,8 @@ uv run pulumi stack init <your-stack-name>
 uv run pulumi up
 ```
 
-There are also several shortcut tasks in that `task infra:` component such as only 
+There are also several shortcut tasks in that `task infra:` component such as only
 deploying the backing LLM, getting stack info, or changing your stack if you have multiple stacks.
-
 
 ### Codespace Specifics
 
@@ -242,12 +244,14 @@ to start those development servers manually rather than through our Taskfile as 
 configuration runs only on the localhost port. To do so, the manual commands would are
 
 for the agent:
+
 ```sh
 cd agent_retrieval_agent
 uv run drum server -cd custom_model --address 0.0.0.0:8842 --target-type agenticworkflow
 ```
 
 and for the Web server:
+
 ```
 cd web
 AGENT_DEPLOYMENT_URL=http://localhost:8842\
@@ -283,7 +287,7 @@ In order to give it access to those files, you need to configure OAuth Applicati
   - `http://localhost:5173/oauth/callback` - local vite dev server (used by frontend folks)
   - `http://localhost:8080/oauth/callback` - web-proxied frontend
   - `http://localhost:8080/api/v1/oauth/callback/` - the local web API (optional).
-  -  For production, you'll want to add your DataRobot callback URL. For example, in US Prod it is `https://app.datarobot.com/custom_applications/{appId}/oauth/callback`. For any installation of DataRobot it is `https://<datarobot-endpoint>/custom_applications/{appId}/oauth/callback`.
+  - For production, you'll want to add your DataRobot callback URL. For example, in US Prod it is `https://app.datarobot.com/custom_applications/{appId}/oauth/callback`. For any installation of DataRobot it is `https://<datarobot-endpoint>/custom_applications/{appId}/oauth/callback`.
 - Hit the "Create" button when you are done.
 - Copy the "Client ID" and "Client Secret" values from the created OAuth client ID and set them in the template env variables as `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` correspondingly.
 - Make sure you have the "Google Drive API" enabled in the "APIs & Services" > "Library" section. Otherwise, you will get 403 errors.
@@ -303,7 +307,7 @@ In order to give it access to those files, you need to configure OAuth Applicati
   - `http://localhost:5173/oauth/callback` - local vite dev server (used by frontend folks)
   - `http://localhost:8080/oauth/callback` - web-proxied frontend
   - `http://localhost:8080/api/v1/oauth/callback/` - the local web API (optional).
-  -  For production, you'll want to add your DataRobot callback URL. For example, in US Prod it is `https://app.datarobot.com/custom_applications/{appId}/oauth/callback`.
+  - For production, you'll want to add your DataRobot callback URL. For example, in US Prod it is `https://app.datarobot.com/custom_applications/{appId}/oauth/callback`.
 - Hit "Save Changes" after that.
 - Under the "Application Scopes", please make sure you have `Read all files and folders stored in Box` checkbox selected.
 - Finally, under the "OAuth 2.0 Credentials" section, you should be able to find your Client ID and Client Secret pair to setup in the template env variables as `BOX_CLIENT_ID` and `BOX_CLIENT_SECRET` correspondingly.

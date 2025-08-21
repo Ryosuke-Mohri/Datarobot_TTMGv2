@@ -18,7 +18,6 @@ import uuid as uuidpkg
 from enum import Enum
 from typing import Any
 
-import aiofiles
 import aiohttp
 import httpx
 from aiogoogle.auth.creds import UserCreds
@@ -40,6 +39,7 @@ from app.knowledge_bases import KnowledgeBaseRepository
 from app.users.identity import ProviderType
 from app.users.user import UserRepository
 from core import document_loader
+from core.persistent_fs.dr_file_system import get_file_system
 
 logger = logging.getLogger(__name__)
 
@@ -727,13 +727,14 @@ async def upload_drive_files(
                         user_uuid
                     )
 
+                fs = get_file_system()
                 # Ensure directory exists
-                file_dir.mkdir(parents=True, exist_ok=True)
+                fs.mkdir(str(file_dir), create_parents=True)
 
-                file_path = file_dir / filename
+                file_path = str(file_dir / filename)
 
                 # Save the file
-                with open(file_path, "wb") as buffer:
+                with fs.open(file_path, "wb") as buffer:
                     buffer.write(file_content)
 
                 # Create file record in database
@@ -744,7 +745,7 @@ async def upload_drive_files(
                 file_data = FileCreate(
                     filename=filename,
                     source=source,
-                    file_path=str(file_path),
+                    file_path=file_path,
                     external_id=file_id,
                     mime_type=mime_type,
                     size_bytes=len(file_content),
@@ -844,8 +845,9 @@ async def upload_box_files(
         # Use user's UUID for standalone files
         file_dir = pathlib.Path(request.app.state.deps.upload_path) / str(user_uuid)
 
+    fs = get_file_system()
     # Ensure directory exists
-    file_dir.mkdir(parents=True, exist_ok=True)
+    fs.mkdir(str(file_dir), create_parents=True)
 
     results: list[FileSchema | dict[str, Any]] = []
 
@@ -870,7 +872,7 @@ async def upload_box_files(
                 continue
 
             # Set up file path using the pre-calculated directory
-            file_path = file_dir / filename
+            file_path = str(file_dir / filename)
 
             # Download file content and stream to disk
             def get_box_file_stream(client: BoxClient, file_id: str) -> Any:
@@ -882,20 +884,20 @@ async def upload_box_files(
                 None, get_box_file_stream, box_client, file_id
             )
 
-            # Stream to disk using aiofiles (no executor needed)
+            # Stream to disk
             total_bytes = 0
-            async with aiofiles.open(file_path, "wb") as buffer:
+            async with fs.open(file_path, "wb") as buffer:
                 for chunk in file_stream:
                     if isinstance(chunk, str):
                         chunk = chunk.encode("utf-8")
-                    await buffer.write(chunk)
+                    buffer.write(chunk)
                     total_bytes += len(chunk)
 
             # Create file record in database
             file_data = FileCreate(
                 filename=filename,
                 source="box",
-                file_path=str(file_path),
+                file_path=file_path,
                 external_id=file_id,
                 mime_type=None,  # Box doesn't always provide mime type
                 size_bytes=total_bytes,
@@ -1053,20 +1055,21 @@ async def upload_local_files(
                     user_uuid
                 )
 
+            fs = get_file_system()
             # Ensure directory exists
-            file_dir.mkdir(parents=True, exist_ok=True)
+            fs.mkdir(str(file_dir), create_parents=True)
 
-            file_path = file_dir / file.filename
+            file_path = str(file_dir / file.filename)
 
             # Save the file
-            async with aiofiles.open(file_path, "wb") as buffer:
-                await buffer.write(contents)
+            with fs.open(file_path, "wb") as buffer:
+                buffer.write(contents)
 
             # Create file record in database
             file_data = FileCreate(
                 filename=file.filename,
                 source="local",
-                file_path=str(file_path),
+                file_path=file_path,
                 mime_type=file.content_type,
                 size_bytes=len(contents),
                 knowledge_base_id=knowledge_base_id,

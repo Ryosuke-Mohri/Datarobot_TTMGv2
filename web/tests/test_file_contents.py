@@ -198,7 +198,11 @@ class TestGetOrCreateEncodedContent:
 
         assert result == mock_content
         # Verify that the document loader was called (proving re-encoding happened)
-        mock_loader.assert_called_once_with(temp_file_with_content)
+        # mock_loader.assert_called_once_with(temp_file_with_content)
+        mock_loader.assert_called_once()
+        assert (
+            mock_loader.call_args.kwargs.get("document_path") == temp_file_with_content
+        )
 
     @pytest.mark.asyncio
     async def test_get_or_create_encoded_content_new_encoding(
@@ -432,7 +436,10 @@ class TestGetOrCreateEncodedContent:
         # Should ignore invalid cache and create new content
         assert result == mock_content
         # Verify that the document loader was actually called (proving re-encoding happened)
-        mock_loader.assert_called_once_with(temp_file_with_content)
+        mock_loader.assert_called_once()
+        assert (
+            mock_loader.call_args.kwargs.get("document_path") == temp_file_with_content
+        )
 
         # Verify the corrupted cache was overwritten with valid content
         with open(encoded_path, "r") as f:

@@ -1,22 +1,11 @@
 import React from 'react';
-import { useChats, useChatsDelete } from '@/api/chat/hooks';
-import { Button } from '@/components/ui/button';
-import {
-    DropdownMenu,
-    DropdownMenuTrigger,
-    DropdownMenuContent,
-    DropdownMenuItem,
-} from '@/components/ui/dropdown-menu';
-import { EllipsisVertical, Trash } from 'lucide-react';
+import { useChats } from '@/api/chat/hooks';
+import { getChatNameOrDefaultWithTimestamp } from '@/lib/utils.ts';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { ChatActionMenu } from '@/components/custom/chat-action-menu.tsx';
 
 export const SettingsChats: React.FC = () => {
     const { data: chats = [], isLoading } = useChats();
-    const { mutate: deleteChat } = useChatsDelete();
-
-    const handleDeleteChat = (chatId: string) => {
-        deleteChat({ chatId });
-    };
 
     if (isLoading) return <div>Loading chats...</div>;
 
@@ -31,29 +20,9 @@ export const SettingsChats: React.FC = () => {
                             className="mb-2 flex items-center justify-between p-4 hover:bg-accent/30 rounded-md text-primary text-gray-500"
                         >
                             <div className="flex items-center justify-between truncate max-w-[400px]">
-                                {chat.name || 'New Chat'}
+                                {getChatNameOrDefaultWithTimestamp(chat)}
                             </div>
-                            <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                    <Button
-                                        className="justify-self-end cursor-pointer"
-                                        variant="ghost"
-                                        size="icon"
-                                        onClick={() => true}
-                                    >
-                                        <EllipsisVertical strokeWidth="4" />
-                                    </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
-                                    <DropdownMenuItem
-                                        onClick={() => handleDeleteChat(chat.uuid)}
-                                        className="cursor-pointer"
-                                    >
-                                        <Trash />
-                                        Delete
-                                    </DropdownMenuItem>
-                                </DropdownMenuContent>
-                            </DropdownMenu>
+                            <ChatActionMenu chat={chat} />
                         </li>
                     ))}
                 </ul>

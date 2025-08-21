@@ -18,6 +18,7 @@ Supports lazy loading, parallel processing, and robust fallback strategies for d
 
 # TODO: Ask Brett: why not textract to support more file types?
 import logging
+import tempfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Callable, Dict, Tuple
@@ -25,7 +26,9 @@ from typing import Callable, Dict, Tuple
 import docx
 import fitz  # PyMuPDF
 import pptx
+from fsspec import AbstractFileSystem
 
+from ..persistent_fs.dr_file_system import get_file_system
 from .constants import DEFAULT_MAX_WORKERS, SUPPORTED_FILE_TYPES, TEXT_FILE_TYPES
 from .exceptions import (
     DocProcessorNoExtractorError,
@@ -36,7 +39,9 @@ logger = logging.getLogger(__name__)
 
 
 def convert_document_to_text(
-    document_path: str, max_workers: int = DEFAULT_MAX_WORKERS
+    document_path: str,
+    max_workers: int = DEFAULT_MAX_WORKERS,
+    file_system: AbstractFileSystem | None = None,
 ) -> Dict[int, str]:
     """
     Extract per-page text from a document, auto-detecting file type.
@@ -44,16 +49,20 @@ def convert_document_to_text(
     Args:
         document_path: Path to the document file.
         max_workers: Maximum number of worker threads for parallel processing.
+        file_system: implementation of AbstractFileSystem for accessing to files, LocalFileSystem is default
     Returns:
         Dict mapping page numbers (1-indexed) to extracted text.
     Raises:
         ValueError: If document type is not supported.
         FileNotFoundError: If document file doesn't exist.
     """
-    path = Path(document_path)
-    if not path.exists():
+
+    if not file_system:
+        file_system = get_file_system()
+    if not file_system.exists(document_path):
         raise FileNotFoundError(f"Document not found at {document_path}")
 
+    path = Path(document_path)
     file_ext = path.suffix.lower().lstrip(".")
 
     if file_ext not in SUPPORTED_FILE_TYPES:
@@ -62,7 +71,13 @@ def convert_document_to_text(
         raise DocProcessorNoExtractorError(file_ext)
 
     logger.info(f"Processing {file_ext} document: {document_path}")
-    return FILE_TYPES_TO_EXTRACTORS[file_ext](path, max_workers)
+    with tempfile.TemporaryDirectory() as tmpdirname:
+        tmp_path = Path(tmpdirname) / path.name
+        file_system.get(
+            document_path, str(tmp_path)
+        )  # copy file from persistent FS so we process locally
+
+        return FILE_TYPES_TO_EXTRACTORS[file_ext](tmp_path, max_workers)
 
 
 def _extract_pdf_page_fitz(path: Path, page_idx: int) -> Tuple[int, str]:
@@ -88,7 +103,7 @@ def extract_text_from_pdf(
     Prefers PyMuPDF for speed, falls back to PyPDF2 if needed.
 
     Args:
-        pdf_path: Path to the PDF file.
+        path: Path to the PDF file.
         max_workers: Maximum number of worker threads.
     Returns:
         Dict mapping page numbers to page text.
@@ -119,7 +134,7 @@ def extract_text_from_docx(
     Each section between page breaks is treated as a "page".
 
     Args:
-        docx_path: Path to the Word document.
+        path: Path to the Word document.
     Returns:
         Dict mapping simulated page numbers to text.
     Raises:
@@ -163,7 +178,7 @@ def extract_text_from_pptx(
     Extract text from a PPTX file, treating each slide as a page.
 
     Args:
-        pptx_path: Path to the PowerPoint presentation.
+        path: Path to the PowerPoint presentation.
     Returns:
         Dict mapping slide numbers to slide text.
     Raises:
@@ -192,7 +207,7 @@ def extract_text_from_txt(
     Extract text from a TXT file, splitting by page markers or length.
 
     Args:
-        txt_path: Path to the text file.
+        path: Path to the text file.
     Returns:
         Dict mapping page numbers to page text.
     Raises:

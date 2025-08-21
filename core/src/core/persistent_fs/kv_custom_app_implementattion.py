@@ -13,10 +13,11 @@
 # limitations under the License.
 
 from enum import Enum
-from typing import Self, cast
+from typing import cast
 
 import datarobot as dr
 import trafaret as t
+from typing_extensions import Self
 
 
 class KeyValueEntityType(Enum):

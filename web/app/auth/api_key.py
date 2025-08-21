@@ -16,11 +16,9 @@ from urllib.parse import urljoin
 
 import httpx
 from datarobot.auth.oauth import Profile
-from fastapi import Depends, HTTPException, Request, status
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi import status
+from fastapi.security import HTTPBearer
 from pydantic import BaseModel, Field
-
-from app.api.v1.schema import ErrorCodes, ErrorSchema
 
 logger = logging.getLogger(__name__)
 
@@ -86,31 +84,6 @@ class DRUser(BaseModel):
                 feature_flags=self.feature_flags,
             ),
         )
-
-
-async def validate_dr_api_key(
-    request: Request,
-    credentials: HTTPAuthorizationCredentials = Depends(dr_api_key_schema),
-) -> DRUser:
-    """
-    Loads DataRobot API key from the incoming request and validates it.
-    """
-    api_key_validator: APIKeyValidator = request.app.state.deps.api_key_validator
-
-    api_key = credentials.credentials
-    dr_user = await api_key_validator.validate(api_key)
-
-    if not dr_user:
-        err = ErrorSchema(
-            code=ErrorCodes.NOT_AUTHED,
-            message="You are not authenticated to access this resource.",
-        )
-
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail=err.model_dump()
-        )
-
-    return dr_user
 
 
 class APIKeyValidator:

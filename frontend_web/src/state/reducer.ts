@@ -11,6 +11,7 @@ export const createInitialState = (): AppStateData => {
             ? JSON.parse(getStorageItem(STORAGE_KEYS.SELECTED_KNOWLEDGE_BASE)!)
             : DEFAULT_VALUES.selectedKnowledgeBase,
         availableLlmModels: null,
+        showRenameChatModalForId: DEFAULT_VALUES.showRenameChatModalForId,
     };
 };
 
@@ -33,6 +34,11 @@ export const reducer = (state: AppStateData, action: Action): AppStateData => {
                 ...state,
                 selectedKnowledgeBase: action.payload,
             };
+        case ACTION_TYPES.SET_SHOW_RENAME_CHAT_MODAL_FOR_ID:
+            return {
+                ...state,
+                showRenameChatModalForId: action.payload.chatId,
+            };
         default:
             return state;
     }
@@ -50,5 +56,9 @@ export const actions = {
     setSelectedKnowledgeBase: (base: KnowledgeBaseSchema | null): Action => ({
         type: ACTION_TYPES.SET_SELECTED_KNOWLEDGE_BASE,
         payload: base,
+    }),
+    setShowRenameChatModalForId: (chatId: string | null): Action => ({
+        type: ACTION_TYPES.SET_SHOW_RENAME_CHAT_MODAL_FOR_ID,
+        payload: { chatId },
     }),
 };

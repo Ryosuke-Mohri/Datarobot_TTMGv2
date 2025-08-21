@@ -211,31 +211,6 @@ export function ChatPromptInput({
                                     {/* Knowledge base selection for all models */}
                                     {bases.length > 0 || selectedKnowledgeBase ? (
                                         [
-                                            // Add "None" option to deselect knowledge base
-                                            <DropdownMenuItem
-                                                key="none"
-                                                onClick={() => setSelectedKnowledgeBase(null)}
-                                                className={cn(
-                                                    'cursor-pointer',
-                                                    !selectedKnowledgeBase &&
-                                                        'bg-primary/10 text-primary font-semibold'
-                                                )}
-                                            >
-                                                <BookOpenText
-                                                    className={cn(
-                                                        !selectedKnowledgeBase && 'text-primary'
-                                                    )}
-                                                />
-                                                <span
-                                                    className={cn(
-                                                        'ml-2',
-                                                        !selectedKnowledgeBase &&
-                                                            'font-semibold text-primary'
-                                                    )}
-                                                >
-                                                    None (use files only)
-                                                </span>
-                                            </DropdownMenuItem>,
                                             ...bases.map(base => (
                                                 <DropdownMenuItem
                                                     key={base.uuid}
@@ -295,30 +270,7 @@ export function ChatPromptInput({
                             </DropdownMenu>
                             <Info className="h-4 text-gray-400" />
                             <p className="h-4 text-base text-gray-400 leading-none">
-                                {selectedKnowledgeBase ? (
-                                    <>
-                                        Using knowledge base:{' '}
-                                        <span className="text-primary font-medium">
-                                            {selectedKnowledgeBase.title}
-                                        </span>
-                                        {!isAgentModel && (
-                                            <>
-                                                <span className="text-gray-500">
-                                                    {' '}
-                                                    (
-                                                    {selectedKnowledgeBase.token_count.toLocaleString()}{' '}
-                                                    tokens)
-                                                </span>
-                                                <span className="text-amber-600 font-medium">
-                                                    {' '}
-                                                    ⚠ High token usage
-                                                </span>
-                                            </>
-                                        )}
-                                    </>
-                                ) : (
-                                    'Upload a file or select a knowledge base'
-                                )}
+                                Upload a file or select a knowledge base
                             </p>
                         </div>
                         <Input
@@ -339,6 +291,43 @@ export function ChatPromptInput({
                             <Send />
                         </Button>
                     </div>
+                    {selectedKnowledgeBase && (
+                        <div className="gap-2 mt-2 bg-accent/30 p-2 rounded w-1/2">
+                            <div className="flex items-center spacebetween">
+                                <p
+                                    className="text-base truncate"
+                                    title={selectedKnowledgeBase.title}
+                                >
+                                    {selectedKnowledgeBase.title}
+                                </p>
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="ml-auto"
+                                    onClick={() => setSelectedKnowledgeBase(null)}
+                                >
+                                    <XIcon />
+                                </Button>
+                            </div>
+                            <div>
+                                <div className=" flex text-sm items-center text-gray-600 gap-2 mb-2">
+                                    <div className="bg-indigo-400 rounded-full px-2 py-1 text-xs text-gray-900 vertical-align-middle">
+                                        Knowledge base
+                                    </div>
+                                    <div className="text-xs text-gray-500">
+                                        {selectedKnowledgeBase.files.length} file
+                                        {selectedKnowledgeBase.files.length !== 1 ? 's' : ''} •{' '}
+                                        {selectedKnowledgeBase.token_count.toLocaleString()} tokens
+                                    </div>
+                                </div>
+                                {!isAgentModel && (
+                                    <div className="text-xs text-amber-600 font-medium">
+                                        ⚠ High token usage possible
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
                     {files?.map((file, index) => (
                         <div
                             key={index}

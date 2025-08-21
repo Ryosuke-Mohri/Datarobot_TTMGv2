@@ -3,11 +3,8 @@ import { ROUTES } from './routes';
 import { cn } from '@/lib/utils';
 
 const navItems = [
-    { label: 'General', to: ROUTES.SETTINGS_GENERAL },
-    { label: 'Chats', to: ROUTES.SETTINGS_CHATS },
-    { label: 'Models', to: ROUTES.SETTINGS_MODELS },
-    { label: 'RAG settings', to: ROUTES.SETTINGS_RAG },
     { label: 'Connected sources', to: ROUTES.SETTINGS_SOURCES },
+    { label: 'Chats', to: ROUTES.SETTINGS_CHATS },
 ];
 
 export const SettingsLayout = () => {

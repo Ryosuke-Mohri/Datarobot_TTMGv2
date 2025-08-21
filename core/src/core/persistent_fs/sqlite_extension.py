@@ -14,9 +14,10 @@
 import asyncio
 import os
 import sqlite3
-from typing import Any, Callable, Self, cast
+from typing import Any, Callable, cast
 
 import aiosqlite
+from typing_extensions import Self
 
 from core.persistent_fs.dr_file_system import DRFileSystem, calculate_checksum
 

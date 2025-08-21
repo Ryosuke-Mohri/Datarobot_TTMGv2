@@ -13,9 +13,10 @@
 # limitations under the License.
 import os
 from types import TracebackType
-from typing import Any, Self
+from typing import Any
 
 import duckdb
+from typing_extensions import Self
 
 from core.persistent_fs.dr_file_system import DRFileSystem, calculate_checksum
 

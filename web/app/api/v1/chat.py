@@ -79,6 +79,13 @@ def initialize_deployment(deployment_id: str) -> tuple[RESTClientObject, str]:
         ) from e
 
 
+async def _get_current_user(user_repo: "UserRepository", user_id: int) -> "User":
+    current_user = await user_repo.get_user(user_id=user_id)
+    if not current_user:
+        raise HTTPException(status_code=401, detail="User not found")
+    return current_user
+
+
 async def augment_message_with_files(
     message: str,
     files: "list[File]",
@@ -131,7 +138,9 @@ def _format_chat(chat: Chat, message: Message | None) -> dict[str, Any]:
     return data
 
 
-async def _get_chat_id(chat_repo: ChatRepository, chat_id: str | None) -> uuidpkg.UUID:
+async def _get_chat_id(
+    chat_repo: ChatRepository, chat_id: str | None, current_user: "User"
+) -> uuidpkg.UUID:
     uuid_value = None
     if chat_id:
         try:
@@ -139,7 +148,9 @@ async def _get_chat_id(chat_repo: ChatRepository, chat_id: str | None) -> uuidpk
         except ValueError:
             pass
     if not uuid_value:
-        new_chat = await chat_repo.create_chat(ChatCreate(name="New Chat"))
+        new_chat = await chat_repo.create_chat(
+            ChatCreate(name="New Chat", user_uuid=current_user.uuid)
+        )
         uuid_value = new_chat.uuid
     return uuid_value
 
@@ -192,11 +203,10 @@ async def _get_knowledge_base(
 async def chat_completion(
     request: Request, auth_ctx: AuthCtx[Metadata] = Depends(must_get_auth_ctx)
 ) -> Any:
-    user_repo: UserRepository = request.app.state.deps.user_repo
     # Get current user's UUID
-    current_user = await user_repo.get_user(user_id=int(auth_ctx.user.id))
-    if not current_user:
-        raise HTTPException(status_code=401, detail="User not found")
+    current_user = await _get_current_user(
+        request.app.state.deps.user_repo, int(auth_ctx.user.id)
+    )
 
     request_data = await request.json()
     message = request_data["message"]
@@ -230,7 +240,7 @@ async def chat_completion(
     message_repo = request.app.state.deps.message_repo
 
     # Get the correct chat
-    chat_uuid = await _get_chat_id(chat_repo, chat_id)
+    chat_uuid = await _get_chat_id(chat_repo, chat_id, current_user)
     await message_repo.create_message(
         MessageCreate(
             chat_id=chat_uuid,
@@ -291,11 +301,10 @@ async def chat_completion(
 async def chat_agent_completion(
     request: Request, auth_ctx: AuthCtx[Metadata] = Depends(must_get_auth_ctx)
 ) -> Any:
-    user_repo = request.app.state.deps.user_repo
     # Get current user's UUID
-    current_user = await user_repo.get_user(user_id=int(auth_ctx.user.id))
-    if not current_user:
-        raise HTTPException(status_code=401, detail="User not found")
+    current_user = await _get_current_user(
+        request.app.state.deps.user_repo, int(auth_ctx.user.id)
+    )
 
     request_data = await request.json()
     message = request_data["message"]
@@ -331,7 +340,7 @@ async def chat_agent_completion(
             # This should not happen since get_combined_files already validates
             pass
 
-    chat_id = await _get_chat_id(chat_repo, request_data.get("chat_id"))
+    chat_id = await _get_chat_id(chat_repo, request_data.get("chat_id"), current_user)
     await message_repo.create_message(
         MessageCreate(
             chat_id=chat_id,
@@ -418,10 +427,15 @@ async def get_list_of_chats(
     request: Request, auth_ctx: AuthCtx[Metadata] = Depends(must_get_auth_ctx)
 ) -> Any:
     """Return list of all chats"""
+    # Get current user's UUID
+    current_user = await _get_current_user(
+        request.app.state.deps.user_repo, int(auth_ctx.user.id)
+    )
+
     chat_repo = request.app.state.deps.chat_repo
     message_repo = request.app.state.deps.message_repo
 
-    chats = await chat_repo.get_all_chats()
+    chats = await chat_repo.get_all_chats(current_user)
     chat_ids = [chat.uuid for chat in chats]
     last_messages = await message_repo.get_last_messages(chat_ids)
 

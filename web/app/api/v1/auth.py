@@ -22,11 +22,12 @@ from datarobot.auth.oauth import (
 from datarobot.auth.session import AuthCtx
 from datarobot.auth.typing import Metadata
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field
 from sqlalchemy.exc import IntegrityError
 
 from app.api.v1.schema import ErrorCodes, ErrorSchema
-from app.auth.api_key import DRUser, validate_dr_api_key
+from app.auth.api_key import APIKeyValidator, DRUser, dr_api_key_schema
 from app.auth.ctx import AUTH_SESS_KEY, get_auth_ctx, must_get_auth_ctx
 from app.auth.session import restore_oauth_session, store_oauth_sess
 from app.users.identity import AuthSchema, Identity, IdentityUpdate
@@ -323,7 +324,7 @@ async def oauth_callback(
 
         logger.info("logged in user", extra={"user_id": user.id, "identity": identity})
 
-        # refresh the user in order to get the actual identities array
+        # Refresh the user in order to get the actual identities array
 
         user = await user_repo.get_user(user_id=identity.user_id)
         request.session[AUTH_SESS_KEY] = user.to_auth_ctx().model_dump()
@@ -334,6 +335,31 @@ async def oauth_callback(
     request.session[AUTH_SESS_KEY] = user.to_auth_ctx().model_dump()
 
     return UserSchema.from_user(user)
+
+
+async def validate_dr_api_key(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials = Depends(dr_api_key_schema),
+) -> DRUser:
+    """
+    Loads DataRobot API key from the incoming request and validates it.
+    """
+    api_key_validator: APIKeyValidator = request.app.state.deps.api_key_validator
+
+    api_key = credentials.credentials
+    dr_user = await api_key_validator.validate(api_key)
+
+    if not dr_user:
+        err = ErrorSchema(
+            code=ErrorCodes.NOT_AUTHED,
+            message="You are not authenticated to access this resource.",
+        )
+
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail=err.model_dump()
+        )
+
+    return dr_user
 
 
 @auth_router.post("/oauth/token/", responses={401: {"model": ErrorSchema}})

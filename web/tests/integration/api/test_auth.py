@@ -23,8 +23,9 @@ from app.api.v1.auth import (
     OAuthProviderListSchema,
     OAuthRedirectSchema,
     UserSchema,
+    validate_dr_api_key,
 )
-from app.auth.api_key import DRUser, validate_dr_api_key
+from app.auth.api_key import DRUser
 from app.auth.ctx import get_auth_ctx, must_get_auth_ctx
 from app.auth.session import get_oauth_sess_key
 from app.users.identity import AuthSchema

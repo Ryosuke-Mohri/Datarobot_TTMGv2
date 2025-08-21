@@ -21,11 +21,16 @@ export const AppStateProvider: React.FC<{
         dispatch(actions.setSelectedKnowledgeBase(base));
     };
 
+    const setShowRenameChatModalForId = (chatId: string | null) => {
+        dispatch(actions.setShowRenameChatModalForId(chatId));
+    };
+
     const contextValue: AppState = {
         ...state,
         setSelectedLlmModel,
         setAvailableLlmModels,
         setSelectedKnowledgeBase,
+        setShowRenameChatModalForId,
     };
 
     return <AppStateContext.Provider value={contextValue}>{children}</AppStateContext.Provider>;

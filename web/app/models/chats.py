@@ -16,10 +16,11 @@ import uuid as uuidpkg
 from datetime import datetime, timezone
 from typing import Any, Sequence, cast
 
-from sqlalchemy import Column, DateTime
+from sqlalchemy import Column, DateTime, ForeignKey
 from sqlmodel import Field, SQLModel, select
 
 from app.db import DBCtx
+from app.users.user import User
 
 
 class Chat(SQLModel, table=True):
@@ -27,6 +28,12 @@ class Chat(SQLModel, table=True):
         default_factory=uuidpkg.uuid4, primary_key=True, unique=True
     )
     name: str = Field(default="New Chat")
+    user_uuid: uuidpkg.UUID | None = Field(
+        default=None,
+        sa_column=Column(
+            "user", ForeignKey("user.uuid", ondelete="CASCADE"), index=True
+        ),
+    )
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),
         sa_column=Column(DateTime(timezone=True), nullable=False),
@@ -42,6 +49,7 @@ class ChatCreate(SQLModel):
     """
 
     name: str
+    user_uuid: uuidpkg.UUID
 
 
 class ChatRepository:
@@ -66,9 +74,12 @@ class ChatRepository:
             response = await sess.exec(select(Chat).where(Chat.uuid == uuid).limit(1))
             return response.one()
 
-    async def get_all_chats(self) -> Sequence[Chat]:
+    async def get_all_chats(self, user: User | None) -> Sequence[Chat]:
+        query = select(Chat)
+        if user:
+            query = query.where(Chat.user_uuid == user.uuid)
         async with self._db.session() as sess:
-            response = await sess.exec(select(Chat))
+            response = await sess.exec(query)
             return response.all()
 
     async def update_chat_name(self, uuid: uuidpkg.UUID, name: str) -> Chat | None:

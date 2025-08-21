@@ -31,6 +31,7 @@ from typing import (
 
 import datarobot as dr
 from fsspec import AbstractFileSystem
+from fsspec.implementations.local import LocalFileSystem
 
 from core.persistent_fs.kv_custom_app_implementattion import (
     KeyValue,
@@ -475,3 +476,12 @@ class _FileIOWrapper(io.FileIO):
             self._fs_entity._upload_to_catalog(self._virtual_path, self.name)
         else:
             logger.debug("Wrapper was empty")
+
+
+def get_file_system() -> AbstractFileSystem:
+    expected_envs = ["DATAROBOT_ENDPOINT", "DATAROBOT_API_TOKEN", "APPLICATION_ID"]
+    if any(not os.environ.get(env_name) for env_name in expected_envs):
+        # there is some env variables missing and probably it's a local run
+        # let's use local file system
+        return LocalFileSystem()
+    return DRFileSystem()

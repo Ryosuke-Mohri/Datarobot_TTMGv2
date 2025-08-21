@@ -1,6 +1,7 @@
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { VITE_STATIC_DEFAULT_PORT, VITE_DEFAULT_PORT } from '@/constants/dev';
+import { IChat } from '@/api/chat/types.ts';
 
 export function cn(...inputs: ClassValue[]) {
     return twMerge(clsx(inputs));
@@ -30,3 +31,13 @@ export function getApiUrl() {
 export function unwrapMarkdownCodeBlock(message: string): string {
     return message.replace(/^```(?:markdown)?\s*/, '').replace(/\s*```$/, '');
 }
+
+const DEFAULT_CHAT_NAME = 'New Chat';
+export const getChatNameOrDefaultWithTimestamp = (chat: IChat) => {
+    const chatName = chat.name || DEFAULT_CHAT_NAME;
+    if (chatName === DEFAULT_CHAT_NAME) {
+        const date = new Date(chat.created_at);
+        return `${chatName} ${date.toLocaleString()}`;
+    }
+    return chatName;
+};

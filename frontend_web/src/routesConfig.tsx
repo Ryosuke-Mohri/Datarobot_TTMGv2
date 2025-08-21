@@ -6,7 +6,6 @@ import { KnowledgeBaseFormPage } from './pages/KnowledgeBaseForm';
 import { SettingsLayout } from './pages/SettingsLayout';
 import { SettingsSources } from './pages/SettingsSources';
 import { SettingsChats } from './pages/SettingsChats';
-import { SettingsPlaceholder } from './pages/SettingsPlaceholder';
 import { PATHS } from '@/constants/paths';
 
 // Lazy-loaded pages
@@ -25,10 +24,7 @@ export const appRoutes = [
         element: <SettingsLayout />,
         children: [
             { index: true, element: <Navigate to="sources" replace /> },
-            { path: 'general', element: <SettingsPlaceholder title="General" /> },
             { path: 'chats', element: <SettingsChats /> },
-            { path: 'models', element: <SettingsPlaceholder title="Models" /> },
-            { path: 'rag', element: <SettingsPlaceholder title="RAG settings" /> },
             { path: 'sources', element: <SettingsSources /> },
         ],
     },

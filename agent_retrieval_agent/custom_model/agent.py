@@ -173,7 +173,7 @@ class MyAgent:
             allow_delegation=False,
             verbose=self.verbose,
             llm=self.model_factory(
-                model="datarobot/azure/o4-mini",
+                model="datarobot/azure/gpt-4o-mini",
                 use_deployment=True,
             ),
         )

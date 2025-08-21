@@ -1,4 +1,4 @@
-import { ChevronDown, MessagesSquare, BookOpenText } from 'lucide-react';
+import { ChevronDown, MessagesSquare, BookOpenText, UserRound } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import drLogo from '@/assets/DataRobot_white.svg';
 import drIcon from '@/assets/DataRobotLogo_black.svg';
@@ -125,9 +125,13 @@ export function AppSidebar() {
                         <div className="h-9 flex w-full gap-1 ml-0.5 mb-2.5">
                             <Avatar>
                                 <AvatarFallback>
-                                    {currentUser && currentUser.first_name && currentUser.last_name
-                                        ? `${currentUser.first_name[0]}${currentUser.last_name[0]}`
-                                        : 'JD'}
+                                    {currentUser &&
+                                    currentUser.first_name &&
+                                    currentUser.last_name ? (
+                                        `${currentUser.first_name[0]}${currentUser.last_name[0]}`
+                                    ) : (
+                                        <UserRound />
+                                    )}
                                 </AvatarFallback>
                             </Avatar>
                             {open ? (

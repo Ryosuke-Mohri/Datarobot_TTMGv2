@@ -15,12 +15,11 @@
 import asyncio
 import json
 import logging
-import pathlib
+from functools import partial
 from typing import TYPE_CHECKING
 
-import aiofiles
-
 from core import document_loader
+from core.persistent_fs.dr_file_system import get_file_system
 
 if TYPE_CHECKING:
     from app.files.models import File, FileRepository
@@ -62,23 +61,18 @@ async def get_or_create_encoded_content(
     Returns:
         Dictionary mapping page numbers to text content, or None if encoding fails
     """
-    if not file.file_path or not pathlib.Path(file.file_path).exists():
+    fs = get_file_system()
+    if not file.file_path or not fs.exists(file.file_path):
         return None
 
     file_path = file.file_path
     encoded_path = f"{file_path}.encoded"
 
     # Check if encoded file already exists and is newer than the original
-    original_path = pathlib.Path(file_path)
-    encoded_file_path = pathlib.Path(encoded_path)
-
-    if (
-        encoded_file_path.exists()
-        and encoded_file_path.stat().st_mtime >= original_path.stat().st_mtime
-    ):
+    if fs.exists(encoded_path) and fs.modified(encoded_path) >= fs.modified(file_path):
         try:
-            async with aiofiles.open(encoded_path, "r", encoding="utf-8") as f:
-                content_str = await f.read()
+            with fs.open(encoded_path, "r", encoding="utf-8") as f:
+                content_str = f.read()
                 content = json.loads(content_str)
                 # Ensure we return the correct type
                 if isinstance(content, dict):
@@ -92,13 +86,18 @@ async def get_or_create_encoded_content(
         # Run document conversion in a thread pool since it's CPU-bound
         loop = asyncio.get_event_loop()
         encoded_content = await loop.run_in_executor(
-            None, document_loader.convert_document_to_text, file_path
+            None,
+            partial(
+                document_loader.convert_document_to_text,
+                document_path=file_path,
+                file_system=fs,
+            ),
         )
 
         # Cache the encoded content
         try:
-            async with aiofiles.open(encoded_path, "w", encoding="utf-8") as f:
-                await f.write(json.dumps(encoded_content, ensure_ascii=False, indent=2))
+            with fs.open(encoded_path, "w", encoding="utf-8") as f:
+                f.write(json.dumps(encoded_content, ensure_ascii=False, indent=2))
         except Exception as e:
             logger.warning(f"Failed to cache encoded content: {e}")
 

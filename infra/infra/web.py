@@ -18,6 +18,7 @@ import textwrap
 from typing import Final, Sequence
 
 import pulumi
+from .frontend_web import frontend_web
 import pulumi_datarobot
 from datarobot_pulumi_utils.schema.apps import ApplicationSourceArgs
 from datarobot_pulumi_utils.schema.apps import CustomAppResourceBundles
@@ -187,7 +188,9 @@ web_app_runtime_parameters: list[
 )
 
 web_app_source = pulumi_datarobot.ApplicationSource(
-    files=get_web_app_files(runtime_parameter_values=web_app_runtime_parameters),
+    files=frontend_web.stdout.apply(
+        lambda _: get_web_app_files(runtime_parameter_values=web_app_runtime_parameters)
+    ),
     runtime_parameter_values=web_app_runtime_parameters,
     resources=pulumi_datarobot.ApplicationSourceResourcesArgs(
         resource_label=CustomAppResourceBundles.CPU_XL.value.id,

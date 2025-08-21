@@ -1,7 +1,14 @@
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-import { deleteChatById, getAllChats, getMessages, getLlmCatalog, postMessage } from './requests';
+import {
+    deleteChatById,
+    renameChatById,
+    getAllChats,
+    getMessages,
+    getLlmCatalog,
+    postMessage,
+} from './requests';
 import { chatKeys } from './keys';
 import { IChatMessage, IPostMessageContext, IUserMessage, IChat } from './types';
 import { useAppState } from '@/state';
@@ -75,6 +82,13 @@ export const usePostMessage = ({ chatId }: { chatId?: string }) => {
                 chatKeys.messages(data.chat_id),
                 (oldData = []) => [...oldData, data]
             );
+            queryClient.setQueryData<IChat[]>(chatKeys.chatList(), (oldData = []) => {
+                return oldData.map(chat =>
+                    chat.uuid === data.chat_id
+                        ? ({ ...chat, updated_at: data.created_at } as IChat)
+                        : chat
+                );
+            });
             if (!chatId) {
                 queryClient.invalidateQueries({ queryKey: chatKeys.chatList() });
             }
@@ -87,8 +101,7 @@ export const useChatMessages = (chatId?: string) => {
     return useQuery<IChatMessage[]>({
         queryKey: chatKeys.messages(chatId),
         queryFn: async ({ signal }) => {
-            const data = await getMessages({ chatId: chatId!, signal });
-            return data;
+            return await getMessages({ chatId: chatId!, signal });
         },
         enabled: !!chatId,
     });
@@ -107,6 +120,14 @@ export const useChatsDelete = () => {
     const queryClient = useQueryClient();
     return useMutation<void, Error, { chatId: string }>({
         mutationFn: ({ chatId }) => deleteChatById({ chatId }),
+        onSettled: () => queryClient.invalidateQueries({ queryKey: chatKeys.chatList() }),
+    });
+};
+
+export const useChatsRename = () => {
+    const queryClient = useQueryClient();
+    return useMutation<void, Error, { chatId: string; chatName: string }>({
+        mutationFn: ({ chatId, chatName }) => renameChatById({ chatId, chatName }),
         onSettled: () => queryClient.invalidateQueries({ queryKey: chatKeys.chatList() }),
     });
 };

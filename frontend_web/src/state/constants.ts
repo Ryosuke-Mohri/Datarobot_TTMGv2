@@ -4,6 +4,7 @@ export const ACTION_TYPES = {
     SET_SELECTED_LLM_MODEL: 'SET_SELECTED_LLM_MODEL',
     SET_AVAILABLE_LLM_MODELS: 'SET_AVAILABLE_LLM_MODELS',
     SET_SELECTED_KNOWLEDGE_BASE: 'SET_SELECTED_KNOWLEDGE_BASE',
+    SET_SHOW_RENAME_CHAT_MODAL_FOR_ID: 'SET_SHOW_RENAME_CHAT_MODAL_FOR_ID',
 } as const;
 
 export const STORAGE_KEYS = {
@@ -15,6 +16,7 @@ export const DEFAULT_VALUES = {
     selectedLlmModel: DEFAULT_LLM_CATALOG[0],
     selectedKnowledgeBase: null,
     availableLlmModels: null,
+    showRenameChatModalForId: null,
 };
 
 export const DATA_VISIBILITY = {

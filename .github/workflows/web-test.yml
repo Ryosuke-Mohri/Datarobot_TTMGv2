@@ -12,6 +12,8 @@ on:
     paths:
       - 'web/**.py'
 
+  workflow_dispatch:
+
 jobs:
   tests:
     name: "FastAPI: web ${{ matrix.python-version }}"
@@ -25,7 +27,7 @@ jobs:
         python-version: ["3.11", "3.12", "3.13"]
 
     steps:
-      - uses: "actions/checkout@v4"
+      - uses: "actions/checkout@v5"
 
       # Ref: https://docs.astral.sh/uv/guides/integration/github/#installation
       - name: Setup uv
@@ -49,6 +51,14 @@ jobs:
       - name: Run Static Checks
         working-directory: web
         run: task lint-check
+
+      - name: Install Frontend Dependencies
+        working-directory: frontend_web
+        run: task install
+
+      - name: Build static Frontend files
+        working-directory: frontend_web
+        run: task build
 
       - name: Test
         working-directory: web

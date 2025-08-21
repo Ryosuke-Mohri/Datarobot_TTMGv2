@@ -68,6 +68,16 @@ export async function deleteChatById({ chatId }: { chatId: string }): Promise<vo
     await apiClient.delete<Record<string, string>>(`${BASE_URL}/${chatId}`);
 }
 
+export async function renameChatById({
+    chatId,
+    chatName,
+}: {
+    chatId: string;
+    chatName: string;
+}): Promise<void> {
+    await apiClient.patch<Record<string, string>>(`${BASE_URL}/${chatId}`, { name: chatName });
+}
+
 export async function getLlmCatalog(): Promise<LLM_MODEL[]> {
     const response = await apiClient.get<DRApiResponse<LLM_MODEL[]>>(llmCatalogUrl);
     return response.data?.data.filter(
