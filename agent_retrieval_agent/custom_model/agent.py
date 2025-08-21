@@ -137,6 +137,7 @@ class MyAgent:
             "file from a list of files. You are given a list of files and a topic. ",
             allow_delegation=False,
             verbose=self.verbose,
+            max_iter=3,
             llm=self.model_factory(
                 model="datarobot/bedrock/anthropic.claude-3-5-sonnet-20240620-v1:0",
                 use_deployment=True,
@@ -171,6 +172,7 @@ class MyAgent:
             "You should use your tools to read the file. "
             "You will be given the file path that should be used to answer the question.",
             allow_delegation=False,
+            max_iter=5,
             verbose=self.verbose,
             llm=self.model_factory(
                 model="datarobot/azure/gpt-4o-mini",
@@ -210,6 +212,7 @@ class MyAgent:
             you'll know you should take action to respond to it.
             """,
             allow_delegation=False,
+            max_iter=5,
             verbose=self.verbose,
             llm=self.model_factory(
                 model="datarobot/azure/gpt-4o-2024-11-20",
@@ -243,8 +246,9 @@ class MyAgent:
             backstory="You are an expert at analyzing file metadata, titles, and content previews to determine which files are most likely to contain relevant information. You work with knowledge base systems where full content isn't immediately available.",
             allow_delegation=False,
             verbose=self.verbose,
+            max_iter=5,
             llm=self.model_factory(
-                model="bedrock/anthropic.claude-3-7-sonnet-20250219-v1:0",
+                model="datarobot/bedrock/anthropic.claude-3-7-sonnet-20250219-v1:0",
                 use_deployment=True,
             ),
         )
@@ -284,9 +288,10 @@ class MyAgent:
                 "You always use the exact UUIDs provided by the previous agent - never make up or guess UUIDs."
             ),
             allow_delegation=False,
+            max_iter=5,
             verbose=self.verbose,
             llm=self.model_factory(
-                model="azure/gpt-4o-2024-11-20",
+                model="datarobot/azure/gpt-4o-2024-11-20",
                 use_deployment=True,
             ),
         )
@@ -331,6 +336,7 @@ class MyAgent:
                 "most relevant information and synthesize multiple sources when needed. "
                 "You never output raw tool results, full documents, or incomplete information."
             ),
+            max_iter=5,
             allow_delegation=False,
             verbose=self.verbose,
             llm=self.model_factory(

@@ -1057,7 +1057,10 @@ async def upload_local_files(
 
             fs = get_file_system()
             # Ensure directory exists
-            fs.mkdir(str(file_dir), create_parents=True)
+            try:
+                fs.mkdir(str(file_dir), create_parents=True)
+            except FileExistsError:
+                pass
 
             file_path = str(file_dir / file.filename)
 
@@ -1092,6 +1095,7 @@ async def upload_local_files(
             results.append(FileSchema.from_file(db_file, owner_uuid=user_uuid))
 
         except Exception as e:
+            logger.exception("Error processing file")
             results.append(
                 {
                     "filename": file.filename,
