@@ -18,6 +18,7 @@ from enum import Enum
 from typing import Any, Sequence, cast
 
 from sqlalchemy import Column, DateTime, ForeignKey, desc
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Field, SQLModel, select
 
 from app.db import DBCtx
@@ -80,13 +81,19 @@ class MessageRepository:
 
     async def create_message(self, message_data: MessageCreate) -> Message:
         """
-        Add a new message to the database.
+        Add a new message to the database with chat existence validation.
+        This method ensures the chat exists before creating the message.
         """
+
         message = Message(**message_data.model_dump())
 
         async with self._db.session() as session:
             session.add(message)
-            await session.commit()
+            try:
+                await session.commit()
+            except IntegrityError:
+                await session.rollback()
+                raise ValueError(f"Chat with ID {message_data.chat_id} does not exist")
             await session.refresh(message)
             return message
 

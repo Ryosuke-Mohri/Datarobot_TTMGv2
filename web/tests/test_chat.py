@@ -26,9 +26,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.exc import NoResultFound
 
+from app.api.v1.chat import _get_or_create_chat_id
 from app.deps import Deps
 from app.models.chats import Chat, ChatRepository
+from app.users.user import User
 
 
 @pytest.fixture
@@ -213,22 +216,24 @@ def test_get_chats_with_authentication(
     # Mock get_all_chats to return some test data
     test_chat = Chat(uuid=uuidpkg.uuid4(), name="Test Chat")
 
-    with patch.object(
-        deps.chat_repo, "get_all_chats", new_callable=AsyncMock
-    ) as mock_get_chats:
-        with patch.object(
+    with (
+        patch.object(
+            deps.chat_repo, "get_all_chats", new_callable=AsyncMock
+        ) as mock_get_chats,
+        patch.object(
             deps.message_repo, "get_last_messages", new_callable=AsyncMock
-        ) as mock_get_messages:
-            mock_get_chats.return_value = [test_chat]
-            mock_get_messages.return_value = {}
+        ) as mock_get_messages,
+    ):
+        mock_get_chats.return_value = [test_chat]
+        mock_get_messages.return_value = {}
 
-            # Make the request - authentication is handled automatically!
-            response = authenticated_client.get("/api/v1/chat")
+        # Make the request - authentication is handled automatically!
+        response = authenticated_client.get("/api/v1/chat")
 
-            assert response.status_code == 200
-            chats = response.json()
-            assert len(chats) == 1
-            assert chats[0]["name"] == "Test Chat"
+        assert response.status_code == 200
+        chats = response.json()
+        assert len(chats) == 1
+        assert chats[0]["name"] == "Test Chat"
 
 
 # Tests for chat deletion functionality
@@ -350,21 +355,23 @@ def test_get_all_chats_includes_updated_list_after_deletion(
     chat2 = Chat(uuid=uuidpkg.uuid4(), name="Chat 2")
 
     # Mock get_all_chats to return remaining chats after deletion
-    with patch.object(
-        deps.chat_repo, "get_all_chats", new_callable=AsyncMock
-    ) as mock_get_chats:
-        with patch.object(
+    with (
+        patch.object(
+            deps.chat_repo, "get_all_chats", new_callable=AsyncMock
+        ) as mock_get_chats,
+        patch.object(
             deps.message_repo, "get_last_messages", new_callable=AsyncMock
-        ) as mock_get_messages:
-            mock_get_chats.return_value = [chat2]
-            mock_get_messages.return_value = {}
+        ) as mock_get_messages,
+    ):
+        mock_get_chats.return_value = [chat2]
+        mock_get_messages.return_value = {}
 
-            response = authenticated_client.get("/api/v1/chat")
+        response = authenticated_client.get("/api/v1/chat")
 
-            assert response.status_code == 200
-            chats = response.json()
-            assert len(chats) == 1
-            assert chats[0]["name"] == "Chat 2"
+        assert response.status_code == 200
+        chats = response.json()
+        assert len(chats) == 1
+        assert chats[0]["name"] == "Chat 2"
 
 
 def test_delete_chat_cascade_behavior_integration(
@@ -422,3 +429,200 @@ def test_chat_agent_completion_with_invalid_file_ids(
     )
     assert response.status_code == 400
     assert "Invalid file_id format" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_get_or_create_chat_id_handles_no_result_found() -> None:
+    """Test that _get_or_create_chat_id properly handles NoResultFound exception."""
+    # Mock database and repository
+    mock_db = MagicMock()
+    mock_session = AsyncMock()
+    mock_db.session.return_value.__aenter__.return_value = mock_session
+
+    # Create test user
+    test_user = User(
+        uuid=uuidpkg.uuid4(),
+        email="test@example.com",
+        first_name="Test",
+        last_name="User",
+    )
+
+    # Create repository with mocked database
+    chat_repo = ChatRepository(mock_db)
+
+    # Mock create_chat to return a new chat
+    new_chat_uuid = uuidpkg.uuid4()
+    mock_new_chat = MagicMock()
+    mock_new_chat.uuid = new_chat_uuid
+
+    # Test with a valid UUID that doesn't exist in database
+    existing_uuid_str = str(uuidpkg.uuid4())
+
+    # Use patch.object to mock the methods properly for mypy
+    with (
+        patch.object(chat_repo, "get_chat", new_callable=AsyncMock) as mock_get_chat,
+        patch.object(
+            chat_repo, "create_chat", new_callable=AsyncMock
+        ) as mock_create_chat,
+    ):
+        # Configure mocks
+        mock_get_chat.side_effect = NoResultFound("No chat found")
+        mock_create_chat.return_value = mock_new_chat
+
+        # Call the function
+        result_uuid, was_created = await _get_or_create_chat_id(
+            chat_repo, existing_uuid_str, test_user
+        )
+
+        # Verify that a new chat was created because the original one wasn't found
+        assert was_created is True
+        assert result_uuid == new_chat_uuid
+
+        # Verify that get_chat was called with the original UUID
+        mock_get_chat.assert_called_once_with(uuidpkg.UUID(existing_uuid_str))
+
+        # Verify that create_chat was called when the original chat wasn't found
+        mock_create_chat.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_get_or_create_chat_id_reuses_existing_chat() -> None:
+    """Test that _get_or_create_chat_id reuses existing chat when found."""
+    # Mock database and repository
+    mock_db = MagicMock()
+    chat_repo = ChatRepository(mock_db)
+
+    # Create test user
+    test_user = User(
+        uuid=uuidpkg.uuid4(),
+        email="test@example.com",
+        first_name="Test",
+        last_name="User",
+    )
+
+    # Create existing chat
+    existing_chat_uuid = uuidpkg.uuid4()
+    existing_chat = Chat(uuid=existing_chat_uuid, name="Existing Chat")
+
+    # Test with a valid UUID that exists in database
+    existing_uuid_str = str(existing_chat_uuid)
+
+    # Use patch.object to mock the methods properly for mypy
+    with (
+        patch.object(chat_repo, "get_chat", new_callable=AsyncMock) as mock_get_chat,
+        patch.object(
+            chat_repo, "create_chat", new_callable=AsyncMock
+        ) as mock_create_chat,
+    ):
+        # Configure mocks
+        mock_get_chat.return_value = existing_chat
+
+        # Call the function
+        result_uuid, was_created = await _get_or_create_chat_id(
+            chat_repo, existing_uuid_str, test_user
+        )
+
+        # Verify that the existing chat was reused
+        assert was_created is False
+        assert result_uuid == existing_chat_uuid
+
+        # Verify that get_chat was called with the UUID
+        mock_get_chat.assert_called_once_with(existing_chat_uuid)
+
+        # Verify that create_chat was NOT called since chat existed
+        mock_create_chat.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_get_or_create_chat_id_creates_new_chat_when_no_id_provided() -> None:
+    """Test that _get_or_create_chat_id creates new chat when no chat_id is provided."""
+    # Mock database and repository
+    mock_db = MagicMock()
+    chat_repo = ChatRepository(mock_db)
+
+    # Create test user
+    test_user = User(
+        uuid=uuidpkg.uuid4(),
+        email="test@example.com",
+        first_name="Test",
+        last_name="User",
+    )
+
+    # Mock create_chat to return a new chat
+    new_chat_uuid = uuidpkg.uuid4()
+    mock_new_chat = MagicMock()
+    mock_new_chat.uuid = new_chat_uuid
+
+    # Use patch.object to mock the methods properly for mypy
+    with (
+        patch.object(chat_repo, "get_chat", new_callable=AsyncMock) as mock_get_chat,
+        patch.object(
+            chat_repo, "create_chat", new_callable=AsyncMock
+        ) as mock_create_chat,
+    ):
+        # Configure mocks
+        mock_create_chat.return_value = mock_new_chat
+
+        # Test with no chat_id provided
+        result_uuid, was_created = await _get_or_create_chat_id(
+            chat_repo, None, test_user
+        )
+
+        # Verify that a new chat was created
+        assert was_created is True
+        assert result_uuid == new_chat_uuid
+
+        # Verify that get_chat was NOT called since no ID was provided
+        mock_get_chat.assert_not_called()
+
+        # Verify that create_chat was called
+        mock_create_chat.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_get_or_create_chat_id_creates_new_chat_with_invalid_uuid_format() -> (
+    None
+):
+    """Test that _get_or_create_chat_id creates new chat when chat_id has invalid UUID format."""
+    # Mock database and repository
+    mock_db = MagicMock()
+    chat_repo = ChatRepository(mock_db)
+
+    # Create test user
+    test_user = User(
+        uuid=uuidpkg.uuid4(),
+        email="test@example.com",
+        first_name="Test",
+        last_name="User",
+    )
+
+    # Mock create_chat to return a new chat
+    new_chat_uuid = uuidpkg.uuid4()
+    mock_new_chat = MagicMock()
+    mock_new_chat.uuid = new_chat_uuid
+
+    # Use patch.object to mock the methods properly for mypy
+    with (
+        patch.object(chat_repo, "get_chat", new_callable=AsyncMock) as mock_get_chat,
+        patch.object(
+            chat_repo, "create_chat", new_callable=AsyncMock
+        ) as mock_create_chat,
+    ):
+        # Configure mocks
+        mock_create_chat.return_value = mock_new_chat
+
+        # Test with invalid UUID format
+        invalid_chat_id = "not-a-valid-uuid-format"
+        result_uuid, was_created = await _get_or_create_chat_id(
+            chat_repo, invalid_chat_id, test_user
+        )
+
+        # Verify that a new chat was created due to invalid UUID format
+        assert was_created is True
+        assert result_uuid == new_chat_uuid
+
+        # Verify that get_chat was NOT called since UUID parsing failed
+        mock_get_chat.assert_not_called()
+
+        # Verify that create_chat was called when UUID parsing failed
+        mock_create_chat.assert_called_once()

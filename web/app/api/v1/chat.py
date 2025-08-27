@@ -32,6 +32,7 @@ from openai.types.chat.chat_completion_user_message_param import (
     ChatCompletionUserMessageParam,
 )
 from pydantic import ValidationError
+from sqlalchemy.exc import NoResultFound
 
 from app.api.v1.knowledge_bases import (
     get_knowledge_base_schema,
@@ -39,7 +40,7 @@ from app.api.v1.knowledge_bases import (
 from app.auth.ctx import must_get_auth_ctx
 from app.files.contents import get_or_create_encoded_content
 from app.models.chats import Chat, ChatCreate, ChatRepository
-from app.models.messages import Message, MessageCreate, Role
+from app.models.messages import Message, MessageCreate, MessageRepository, Role
 from core import getenv
 
 if TYPE_CHECKING:
@@ -138,21 +139,39 @@ def _format_chat(chat: Chat, message: Message | None) -> dict[str, Any]:
     return data
 
 
-async def _get_chat_id(
+async def _get_or_create_chat_id(
     chat_repo: ChatRepository, chat_id: str | None, current_user: "User"
-) -> uuidpkg.UUID:
-    uuid_value = None
-    if chat_id:
-        try:
-            uuid_value = uuidpkg.UUID(chat_id)
-        except ValueError:
-            pass
-    if not uuid_value:
+) -> tuple[uuidpkg.UUID, bool]:
+    """
+    Get or create a chat ID. Returns tuple of (chat_uuid, was_created).
+    """
+    # If no chat_id provided, create new chat
+    if not chat_id:
         new_chat = await chat_repo.create_chat(
             ChatCreate(name="New Chat", user_uuid=current_user.uuid)
         )
-        uuid_value = new_chat.uuid
-    return uuid_value
+        return new_chat.uuid, True
+
+    # Try to parse the chat_id as UUID
+    try:
+        uuid_value = uuidpkg.UUID(chat_id)
+    except ValueError:
+        # Invalid UUID format, create new chat
+        new_chat = await chat_repo.create_chat(
+            ChatCreate(name="New Chat", user_uuid=current_user.uuid)
+        )
+        return new_chat.uuid, True
+
+    # Check if chat exists
+    try:
+        await chat_repo.get_chat(uuid_value)
+        return uuid_value, False
+    except NoResultFound:
+        # Chat doesn't exist, create new chat
+        new_chat = await chat_repo.create_chat(
+            ChatCreate(name="New Chat", user_uuid=current_user.uuid)
+        )
+        return new_chat.uuid, True
 
 
 async def _get_files(
@@ -236,11 +255,11 @@ async def chat_completion(
     # Combine both sets of files
     combined_files = files + knowledge_base_files
 
-    chat_repo = request.app.state.deps.chat_repo
-    message_repo = request.app.state.deps.message_repo
+    chat_repo: ChatRepository = request.app.state.deps.chat_repo
+    message_repo: MessageRepository = request.app.state.deps.message_repo
 
     # Get the correct chat
-    chat_uuid = await _get_chat_id(chat_repo, chat_id, current_user)
+    chat_uuid, _ = await _get_or_create_chat_id(chat_repo, chat_id, current_user)
     await message_repo.create_message(
         MessageCreate(
             chat_id=chat_uuid,
@@ -312,10 +331,12 @@ async def chat_agent_completion(
     knowledge_base_uuid_str = request_data.get("knowledge_base_id")
     file_ids_str = request_data.get("file_ids", [])
 
-    chat_repo = request.app.state.deps.chat_repo
-    message_repo = request.app.state.deps.message_repo
-    file_repo = request.app.state.deps.file_repo
-    knowledge_base_repo = request.app.state.deps.knowledge_base_repo
+    chat_repo: ChatRepository = request.app.state.deps.chat_repo
+    message_repo: MessageRepository = request.app.state.deps.message_repo
+    file_repo: FileRepository = request.app.state.deps.file_repo
+    knowledge_base_repo: KnowledgeBaseRepository = (
+        request.app.state.deps.knowledge_base_repo
+    )
 
     # Get/Validate files and knowledge base schema
     files = await _get_files(
@@ -337,10 +358,15 @@ async def chat_agent_completion(
                 file_repo=file_repo,
             )
         except (ValueError, TypeError):
-            # This should not happen since get_combined_files already validates
-            pass
+            logger.exception(
+                "Failed to get knowledge base schema for validation. "
+                "knowledge_base_uuid=%s",
+                knowledge_base.uuid,
+            )
 
-    chat_id = await _get_chat_id(chat_repo, request_data.get("chat_id"), current_user)
+    chat_id, _ = await _get_or_create_chat_id(
+        chat_repo, request_data.get("chat_id"), current_user
+    )
     await message_repo.create_message(
         MessageCreate(
             chat_id=chat_id,
