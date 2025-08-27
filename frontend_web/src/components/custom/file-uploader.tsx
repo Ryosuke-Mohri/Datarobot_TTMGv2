@@ -1,20 +1,14 @@
 import React, { useState } from 'react';
 import { toast } from 'sonner';
 import Dropzone, { type FileRejection } from 'react-dropzone';
-import { EllipsisVertical, Trash } from 'lucide-react';
 import fileUpload from '@/assets/file_upload.svg';
 import { XIcon, Plus, FileChartColumnIncreasing } from 'lucide-react';
 import { Button } from '@/components/ui/button.tsx';
 import { Progress } from '@/components/ui/progress';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import {
-    DropdownMenu,
-    DropdownMenuTrigger,
-    DropdownMenuContent,
-    DropdownMenuItem,
-} from '@/components/ui/dropdown-menu';
 import { ConfirmDialog } from '@/components/custom/confirm-dialog';
 import { FileSchema, useFileUploadMutation } from '@/api/knowledge-bases/hooks';
+import { FileActionMenu } from '@/components/custom/file-action-menu.tsx';
 
 interface FileUploaderProps {
     maxSize?: number;
@@ -177,48 +171,29 @@ export const FileUploader: React.FC<FileUploaderProps> = ({
                             )}
 
                             {/* Existing files */}
-                            {existingFiles.map((file, index) => (
-                                <div
-                                    key={`existing-${index}`}
-                                    className="group flex items-center pt-4 gap-4 w-full border-gray-100 pb-4"
-                                >
-                                    <div className="flex justify-center items-center w-8">
-                                        <FileChartColumnIncreasing className="w-6 text-blue-500" />
-                                    </div>
-                                    <div className="flex flex-col flex-1 min-w-0">
-                                        <div className="text-sm font-normal leading-tight truncate">
-                                            {file.filename}
+                            {existingFiles.map((file, index) => {
+                                return (
+                                    <div
+                                        key={`existing-${index}`}
+                                        className="group flex items-center pt-4 gap-4 w-full border-gray-100 pb-4"
+                                    >
+                                        <div className="flex justify-center items-center w-8">
+                                            <FileChartColumnIncreasing className="w-6 text-blue-500" />
                                         </div>
-                                        <div className="text-xs text-gray-400 leading-tight truncate">
-                                            Added: {new Date(file.added).toLocaleDateString()}
-                                            {file.size_bytes &&
-                                                ` • ${(file.size_bytes / 1024 / 1024).toFixed(2)} MB`}
+                                        <div className="flex flex-col flex-1 min-w-0">
+                                            <div className="text-sm font-normal leading-tight truncate">
+                                                {file.filename}
+                                            </div>
+                                            <div className="text-xs text-gray-400 leading-tight truncate">
+                                                Added: {new Date(file.added).toLocaleDateString()}
+                                                {file.size_bytes &&
+                                                    ` • ${(file.size_bytes / 1024 / 1024).toFixed(2)} MB`}
+                                            </div>
                                         </div>
+                                        <FileActionMenu file={file} onDelete={setFilesToRemove} />
                                     </div>
-
-                                    <DropdownMenu>
-                                        <DropdownMenuTrigger asChild>
-                                            <Button
-                                                className="justify-self-end cursor-pointer"
-                                                variant="ghost"
-                                                size="icon"
-                                                onClick={() => true}
-                                            >
-                                                <EllipsisVertical strokeWidth="4" />
-                                            </Button>
-                                        </DropdownMenuTrigger>
-                                        <DropdownMenuContent align="end">
-                                            <DropdownMenuItem
-                                                onClick={() => setFilesToRemove(file)}
-                                                className="cursor-pointer text-red-400 hover:text-red-300 hover:bg-gray-700"
-                                            >
-                                                <Trash />
-                                                Delete
-                                            </DropdownMenuItem>
-                                        </DropdownMenuContent>
-                                    </DropdownMenu>
-                                </div>
-                            ))}
+                                );
+                            })}
                         </ScrollArea>
                     </div>
                 )}

@@ -1,6 +1,6 @@
 ---
 # https://taskfile.dev
-version: '3'
+version: "3"
 
 dotenv: [".env"]
 
@@ -45,12 +45,22 @@ tasks:
       - web:test
       - frontend:test
       - agent:test
+
   dev-all:
     desc: "🚀 Run agent, backend (web), and frontend together"
-    deps:
-      - web:dev-agent
-      - frontend:dev
-      - agent:dev
+    cmds:
+      - |
+        task web:dev-agent &
+        sleep 5
+        task agent:dev &
+        sleep 3
+        task frontend:dev &
+        sleep 8
+        echo "✅ All servers started!"
+        echo "🔗 Backend: http://localhost:8080"
+        echo "🔗 Frontend: http://localhost:5173"
+        echo "🔗 Agent: http://localhost:8842"
+        wait
 
   deploy:
     desc: "🚀 Deploy the infrastructure"

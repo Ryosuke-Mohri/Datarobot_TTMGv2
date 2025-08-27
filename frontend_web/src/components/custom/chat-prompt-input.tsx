@@ -26,6 +26,7 @@ import {
     useFileUploadMutation,
     useListKnowledgeBases,
     FileSchema,
+    useGetKnowledgeBase,
 } from '@/api/knowledge-bases/hooks';
 import { ConnectedSourcesDialog } from '@/components/custom/connected-sources-dialog';
 import { ExternalFile, useExternalFileUploadMutation } from '@/api/external-files';
@@ -48,9 +49,13 @@ export function ChatPromptInput({
     const [message, setMessage] = useState<string>('');
     const { mutateAsync } = usePostMessage({ chatId });
     const navigate = useNavigate();
-    const { selectedLlmModel, selectedKnowledgeBase, setSelectedKnowledgeBase } = useAppState();
+    const { selectedLlmModel, selectedKnowledgeBaseId, setSelectedKnowledgeBaseId } = useAppState();
+    const { data: selectedKnowledgeBase } = useGetKnowledgeBase(
+        selectedKnowledgeBaseId ?? undefined
+    );
     const { data: bases = [], isFetched: isKnowledgeBasesFetched } = useListKnowledgeBases();
     const [files, setFiles] = useState<FileSchema[]>();
+    const [isSelectFileActionMenuOpen, setIsSelectFileActionMenuOpen] = useState(false);
     const [isConnectedSourcesOpen, setIsConnectedSourcesOpen] = useState(false);
     const [isComposing, setIsComposing] = useState(false);
     const { mutate } = useFileUploadMutation({
@@ -65,21 +70,23 @@ export function ChatPromptInput({
     useEffect(() => {
         if (
             isKnowledgeBasesFetched &&
-            selectedKnowledgeBase &&
-            !bases.some(base => base.uuid === selectedKnowledgeBase.uuid)
+            selectedKnowledgeBaseId &&
+            !bases.some(base => base.uuid === selectedKnowledgeBaseId)
         ) {
-            setSelectedKnowledgeBase(null);
+            setSelectedKnowledgeBaseId(null);
         }
-    }, [selectedKnowledgeBase, bases, isKnowledgeBasesFetched, setSelectedKnowledgeBase]);
+    }, [selectedKnowledgeBaseId, bases, isKnowledgeBasesFetched, setSelectedKnowledgeBaseId]);
 
     const { mutate: mutateExternalFile, isPending: isExternalFileUploading } =
         useExternalFileUploadMutation({
             onSuccess: data => {
                 setFiles(data);
+                setIsConnectedSourcesOpen(false);
             },
             onError: error => {
                 console.error('Error uploading external file:', error);
             },
+            knowledgeBaseUuid: selectedKnowledgeBaseId ?? undefined,
         });
 
     const isAgentModel = selectedLlmModel.model === AGENT_MODEL;
@@ -101,13 +108,14 @@ export function ChatPromptInput({
     };
 
     const handleConnectedSourcesClick = () => {
+        setIsSelectFileActionMenuOpen(false);
         setIsConnectedSourcesOpen(true);
     };
 
     const handleKnowledgeBaseSelect = async (baseUuid: string) => {
         const selectedBase = bases.find(base => base.uuid === baseUuid);
         console.log('Selecting knowledge base:', selectedBase?.title, 'UUID:', baseUuid);
-        setSelectedKnowledgeBase(selectedBase || null);
+        setSelectedKnowledgeBaseId(selectedBase?.uuid || null);
     };
 
     const handleAddKnowledgeBase = () => {
@@ -124,9 +132,7 @@ export function ChatPromptInput({
                     ? { fileIds: files.map(file => file.uuid) }
                     : undefined;
                 // Send only knowledge base ID instead of full knowledge base object
-                const knowledgeBaseId = selectedKnowledgeBase
-                    ? selectedKnowledgeBase.uuid
-                    : undefined;
+                const knowledgeBaseId = selectedKnowledgeBaseId ?? undefined;
                 await mutateAsync({
                     message,
                     context,
@@ -137,7 +143,7 @@ export function ChatPromptInput({
                 setPendingMessage(false);
             }
         }
-    }, [mutateAsync, message, setMessage, setPendingMessage, files, selectedKnowledgeBase]);
+    }, [mutateAsync, message, setMessage, setPendingMessage, files, selectedKnowledgeBaseId]);
 
     const handleEnterPress = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
         if (e.key === 'Enter' && !e.shiftKey && !isComposing) {
@@ -181,7 +187,10 @@ export function ChatPromptInput({
                 <div className="w-full p-1 border border-t-0 border-gray-700">
                     <div className="flex items-center justify-between h-12">
                         <div className="flex gap-1 items-center">
-                            <DropdownMenu>
+                            <DropdownMenu
+                                open={isSelectFileActionMenuOpen}
+                                onOpenChange={setIsSelectFileActionMenuOpen}
+                            >
                                 <DropdownMenuTrigger asChild>
                                     <Button
                                         className="justify-self-end cursor-pointer"
@@ -209,7 +218,7 @@ export function ChatPromptInput({
                                         Upload from connected source
                                     </DropdownMenuItem>
                                     {/* Knowledge base selection for all models */}
-                                    {bases.length > 0 || selectedKnowledgeBase ? (
+                                    {bases.length > 0 || selectedKnowledgeBaseId ? (
                                         [
                                             ...bases.map(base => (
                                                 <DropdownMenuItem
@@ -219,21 +228,21 @@ export function ChatPromptInput({
                                                     }
                                                     className={cn(
                                                         'cursor-pointer',
-                                                        selectedKnowledgeBase?.uuid === base.uuid &&
+                                                        selectedKnowledgeBaseId === base.uuid &&
                                                             'bg-primary/10 text-primary font-semibold'
                                                     )}
                                                 >
                                                     <BookOpenText
                                                         className={cn(
-                                                            selectedKnowledgeBase?.uuid ===
-                                                                base.uuid && 'text-primary'
+                                                            selectedKnowledgeBaseId === base.uuid &&
+                                                                'text-primary'
                                                         )}
                                                     />
                                                     <div className="flex flex-col ml-2">
                                                         <span
                                                             className={cn(
                                                                 'font-medium',
-                                                                selectedKnowledgeBase?.uuid ===
+                                                                selectedKnowledgeBaseId ===
                                                                     base.uuid &&
                                                                     'font-semibold text-primary'
                                                             )}
@@ -304,7 +313,7 @@ export function ChatPromptInput({
                                     variant="ghost"
                                     size="sm"
                                     className="ml-auto"
-                                    onClick={() => setSelectedKnowledgeBase(null)}
+                                    onClick={() => setSelectedKnowledgeBaseId(null)}
                                 >
                                     <XIcon />
                                 </Button>

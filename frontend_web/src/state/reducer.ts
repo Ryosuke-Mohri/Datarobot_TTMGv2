@@ -1,15 +1,15 @@
-import { AppStateData, Action, LLM_MODEL, KnowledgeBaseSchema } from './types';
+import { AppStateData, Action, LLM_MODEL } from './types';
 import { ACTION_TYPES, DEFAULT_VALUES, STORAGE_KEYS } from './constants';
-import { getStorageItem, setStorageItem } from './storage';
+import { getStorageItem, removeStorageItem, setStorageItem } from './storage';
 
 export const createInitialState = (): AppStateData => {
     return {
         selectedLlmModel: getStorageItem(STORAGE_KEYS.SELECTED_LLM_MODEL)
             ? JSON.parse(getStorageItem(STORAGE_KEYS.SELECTED_LLM_MODEL)!)
             : DEFAULT_VALUES.selectedLlmModel,
-        selectedKnowledgeBase: getStorageItem(STORAGE_KEYS.SELECTED_KNOWLEDGE_BASE)
-            ? JSON.parse(getStorageItem(STORAGE_KEYS.SELECTED_KNOWLEDGE_BASE)!)
-            : DEFAULT_VALUES.selectedKnowledgeBase,
+        selectedKnowledgeBaseId: getStorageItem(STORAGE_KEYS.SELECTED_KNOWLEDGE_BASE_ID)
+            ? getStorageItem(STORAGE_KEYS.SELECTED_KNOWLEDGE_BASE_ID)
+            : DEFAULT_VALUES.selectedKnowledgeBaseId,
         availableLlmModels: null,
         showRenameChatModalForId: DEFAULT_VALUES.showRenameChatModalForId,
     };
@@ -28,11 +28,15 @@ export const reducer = (state: AppStateData, action: Action): AppStateData => {
                 ...state,
                 availableLlmModels: action.payload,
             };
-        case ACTION_TYPES.SET_SELECTED_KNOWLEDGE_BASE:
-            setStorageItem(STORAGE_KEYS.SELECTED_KNOWLEDGE_BASE, JSON.stringify(action.payload));
+        case ACTION_TYPES.SET_SELECTED_KNOWLEDGE_BASE_ID:
+            if (!action.payload.id) {
+                removeStorageItem(STORAGE_KEYS.SELECTED_KNOWLEDGE_BASE_ID);
+            } else {
+                setStorageItem(STORAGE_KEYS.SELECTED_KNOWLEDGE_BASE_ID, action.payload.id);
+            }
             return {
                 ...state,
-                selectedKnowledgeBase: action.payload,
+                selectedKnowledgeBaseId: action.payload.id,
             };
         case ACTION_TYPES.SET_SHOW_RENAME_CHAT_MODAL_FOR_ID:
             return {
@@ -53,9 +57,9 @@ export const actions = {
         type: ACTION_TYPES.SET_AVAILABLE_LLM_MODELS,
         payload: models,
     }),
-    setSelectedKnowledgeBase: (base: KnowledgeBaseSchema | null): Action => ({
-        type: ACTION_TYPES.SET_SELECTED_KNOWLEDGE_BASE,
-        payload: base,
+    setSelectedKnowledgeBaseId: (id: string | null): Action => ({
+        type: ACTION_TYPES.SET_SELECTED_KNOWLEDGE_BASE_ID,
+        payload: { id },
     }),
     setShowRenameChatModalForId: (chatId: string | null): Action => ({
         type: ACTION_TYPES.SET_SHOW_RENAME_CHAT_MODAL_FOR_ID,

@@ -55,7 +55,6 @@ export function ConnectedSourcesDialog({
             }
         } else if (file.type === 'file') {
             onFileSelect(file, source);
-            handleDialogClose(false);
         }
     };
 

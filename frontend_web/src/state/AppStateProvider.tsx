@@ -1,5 +1,5 @@
 import React, { useReducer } from 'react';
-import { AppState, AppStateData, LLM_MODEL, KnowledgeBaseSchema } from './types';
+import { AppState, AppStateData, LLM_MODEL } from './types';
 import { reducer, createInitialState, actions } from './reducer';
 import { AppStateContext } from './AppStateContext';
 
@@ -17,8 +17,8 @@ export const AppStateProvider: React.FC<{
         dispatch(actions.setAvailableLlmModels(models));
     };
 
-    const setSelectedKnowledgeBase = (base: KnowledgeBaseSchema | null) => {
-        dispatch(actions.setSelectedKnowledgeBase(base));
+    const setSelectedKnowledgeBaseId = (id: string | null) => {
+        dispatch(actions.setSelectedKnowledgeBaseId(id));
     };
 
     const setShowRenameChatModalForId = (chatId: string | null) => {
@@ -29,7 +29,7 @@ export const AppStateProvider: React.FC<{
         ...state,
         setSelectedLlmModel,
         setAvailableLlmModels,
-        setSelectedKnowledgeBase,
+        setSelectedKnowledgeBaseId,
         setShowRenameChatModalForId,
     };
 

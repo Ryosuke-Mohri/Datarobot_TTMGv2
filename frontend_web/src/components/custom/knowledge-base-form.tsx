@@ -45,8 +45,9 @@ export function KnowledgeBaseForm({
     };
     return (
         <form onSubmit={handleSave} className="flex gap-4 flex-col">
-            <Label className="mt-4">
+            <Label className="mt-4 block">
                 <span className="text-sm font-medium">What are you working on?</span>
+                <span className="ml-1 text-xs text-gray-400">(Required)</span>
             </Label>
             <Input
                 data-testid="name-input"
@@ -54,15 +55,22 @@ export function KnowledgeBaseForm({
                 value={name}
                 onChange={e => setName(e.target.value)}
                 required
-                className="w-full dark:bg-accent focus-visible:ring-0 focus-visible:ring-offset-0"
+                placeholder="Will be used as Knowledge Base name"
+                className="w-full dark:bg-accent focus-visible:ring-0 focus-visible:ring-offset-0 placeholder:text-gray-500"
             />
-            <Label className="mt-4">
+            <Label className="mt-4 block">
                 <span className="text-sm font-medium">What are you trying to achieve?</span>
+                <span className="ml-1 text-xs text-gray-400">(Required)</span>
+                <p className="text-gray-400 text-sm">
+                    A detailed description helps generate more accurate results.
+                </p>
             </Label>
             <Textarea
                 data-testid="description-textarea"
                 value={description}
-                className="w-full dark:bg-accent focus-visible:border-ring focus-visible:ring-0 focus-visible:ring-offset-0"
+                required
+                placeholder="Additional context for the Knowledge Base"
+                className="w-full dark:bg-accent focus-visible:border-ring focus-visible:ring-0 focus-visible:ring-offset-0  placeholder:text-gray-500"
                 onChange={e => setDescription(e.target.value)}
                 rows={3}
             />

@@ -47,10 +47,10 @@ export const useListKnowledgeBases = () => {
     });
 };
 
-export const useGetKnowledgeBase = (knowledgeBaseUuid: string) => {
+export const useGetKnowledgeBase = (knowledgeBaseUuid?: string) => {
     return useQuery({
-        queryKey: knowledgeBasesKeys.byId(knowledgeBaseUuid),
-        queryFn: ({ signal }) => getKnowledgeBase(knowledgeBaseUuid, signal),
+        queryKey: knowledgeBasesKeys.byId(knowledgeBaseUuid!),
+        queryFn: ({ signal }) => getKnowledgeBase(knowledgeBaseUuid!, signal),
         enabled: !!knowledgeBaseUuid,
     });
 };
@@ -133,7 +133,7 @@ export const useFileUploadMutation = ({
 
     const mutation = useMutation({
         mutationFn: async ({ files }: { files: File[] }) => {
-            const response = await uploadFiles({
+            return await uploadFiles({
                 files,
                 knowledgeBaseUuid: baseUuid,
                 onUploadProgress: progressEvent => {
@@ -143,8 +143,6 @@ export const useFileUploadMutation = ({
                     }
                 },
             });
-
-            return response;
         },
 
         onSuccess: data => {

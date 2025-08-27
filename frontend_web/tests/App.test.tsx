@@ -12,7 +12,7 @@ describe('Application', () => {
         renderWithProviders(<App />, {
             selectedLlmModel: DEFAULT_LLM_CATALOG[0],
             availableLlmModels: DEFAULT_LLM_CATALOG,
-            selectedKnowledgeBase: null,
+            selectedKnowledgeBaseId: null,
         } as AppState);
 
         const loader = screen.getByTestId('app-loader');
@@ -37,7 +37,7 @@ describe('Application', () => {
         renderWithProviders(<App />, {
             selectedLlmModel: DEFAULT_LLM_CATALOG[0],
             availableLlmModels: DEFAULT_LLM_CATALOG,
-            selectedKnowledgeBase: null,
+            selectedKnowledgeBaseId: null,
         } as AppState);
 
         const modelName = await screen.findByTestId('app-model-name');
@@ -66,7 +66,7 @@ describe('Application', () => {
             {
                 selectedLlmModel: DEFAULT_LLM_CATALOG[0],
                 availableLlmModels: DEFAULT_LLM_CATALOG,
-                selectedKnowledgeBase: null,
+                selectedKnowledgeBaseId: null,
             } as AppState,
             PATHS.KNOWLEDGE_BASES
         );

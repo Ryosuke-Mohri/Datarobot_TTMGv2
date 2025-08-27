@@ -19,3 +19,7 @@ export const getStorageItem = (key: string): string | null => {
 export const setStorageItem = (key: string, value: string): void => {
     localStorage.setItem(getPrefixedKey(key), value);
 };
+
+export const removeStorageItem = (key: string): void => {
+    localStorage.removeItem(getPrefixedKey(key));
+};
