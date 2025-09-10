@@ -21,19 +21,26 @@ handle authentication setup with a default test user.
 """
 
 import uuid as uuidpkg
-from typing import Any, Dict, Generator
+from typing import Any, Generator
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import litellm.exceptions
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.exc import NoResultFound
 
-from app.api.v1.chat import _get_or_create_chat_id
+from app.api.v1.chat import (
+    _get_or_create_chat_id,
+    _send_chat_agent_completion,
+    _send_chat_completion,
+)
+from app.chats import Chat, ChatRepository
 from app.deps import Deps
-from app.models.chats import Chat, ChatRepository
+from app.messages import Message, MessageUpdate, Role
 from app.users.user import User
 
 
+# Fixtures
 @pytest.fixture
 def mock_dr_client() -> Generator[MagicMock, None, None]:
     with patch("datarobot.Client") as mock_client:
@@ -41,181 +48,126 @@ def mock_dr_client() -> Generator[MagicMock, None, None]:
         client_instance.token = "test-token"
         client_instance.endpoint = "https://test-endpoint.datarobot.com"
         mock_client.return_value = client_instance
-
         yield mock_client
 
 
 @pytest.fixture
-def mock_openai_client() -> Generator[MagicMock, None, None]:
-    with patch(
-        "app.api.v1.chat.AsyncOpenAI"
-    ) as mock_openai:  # TODO: don't use monkey patching, pass the mock via Deps
-        mock_instance = MagicMock()
+def mock_litellm_completion() -> Generator[MagicMock, None, None]:
+    """Fixture for successful litellm completion."""
+    with patch("litellm.acompletion") as mock_acompletion:
 
-        # Mock the async behavior of the client
-        async def mock_create(**kwargs: Dict[str, Any]) -> MagicMock:
-            return MagicMock(choices=[MagicMock(message=MagicMock(content="test"))])
+        async def _mock_acompletion(*args: Any, **kwargs: Any) -> dict[str, Any]:
+            return {"choices": [{"message": {"role": "assistant", "content": "test"}}]}
 
-        mock_instance.chat.completions.create = mock_create
-        mock_openai.return_value.__aenter__.return_value = mock_instance
-
-        yield mock_openai
+        mock_acompletion.side_effect = _mock_acompletion
+        yield mock_acompletion
 
 
 @pytest.fixture
-def mock_message_repo(deps: Deps) -> Generator[None, None, None]:
-    with patch.object(
-        deps.message_repo,
-        "create_message",
-        AsyncMock(
-            return_value=MagicMock(dump_json_compatible=lambda: {"content": "test"})
-        ),
-    ):
-        yield
+def mock_message_repo() -> AsyncMock:
+    """Fixture for mocking message repository with proper return values."""
+    return AsyncMock(
+        return_value=MagicMock(dump_json_compatible=lambda: {"content": "test"})
+    )
 
 
-def test_chat(
+@pytest.fixture
+def mock_api_connection_error() -> litellm.exceptions.APIConnectionError:
+    """Fixture to create a standard APIConnectionError for testing."""
+    error_message = '{"message": "Request is too large. The request size is 278284656 bytes and the maximum message size allowed by the server is 11264MB"}'
+    return litellm.exceptions.APIConnectionError(
+        f"litellm.APIConnectionError: DatarobotException - {error_message}",
+        llm_provider="datarobot",
+        model="test-model",
+    )
+
+
+@pytest.fixture
+def sample_chat() -> Chat:
+    """Fixture to create a test chat object."""
+    return Chat(uuid=uuidpkg.uuid4(), name="Test Chat")
+
+
+@pytest.fixture
+def sample_user_message(sample_chat: Chat) -> Message:
+    """Fixture to create a test user message object."""
+    return Message(
+        uuid=uuidpkg.uuid4(),
+        chat_id=sample_chat.uuid,
+        model="test-model",
+        role=Role.USER,
+        content="Hello, test!",
+    )
+
+
+@pytest.fixture
+def sample_llm_message(sample_chat: Chat) -> Message:
+    """Fixture to create a test user message object."""
+    return Message(
+        uuid=uuidpkg.uuid4(),
+        chat_id=sample_chat.uuid,
+        model="test-model",
+        role=Role.ASSISTANT,
+        content="Test response",
+        in_progress=True,
+    )
+
+
+@pytest.fixture
+def test_user() -> User:
+    """Fixture to create a test user object."""
+    return User(
+        uuid=uuidpkg.uuid4(),
+        email="test@example.com",
+        first_name="Test",
+        last_name="User",
+    )
+
+
+# Basic chat tests
+async def test_new_chat(
     deps: Deps,
     authenticated_client: TestClient,
     mock_dr_client: MagicMock,
-    mock_openai_client: MagicMock,
-    mock_message_repo: MagicMock,
+    mock_litellm_completion: MagicMock,
+    sample_chat: Chat,
+    sample_user_message: Message,
+    sample_llm_message: Message,
 ) -> None:
     """Test chat completion endpoint with authenticated client."""
-    with patch.object(deps.chat_repo, "create_chat") as mock_create:
-        mock_create.return_value = Chat(uuid=uuidpkg.uuid4(), name="New Chat")
-
-        response = authenticated_client.post(
-            "/api/v1/chat/completions",
-            json={"message": "Hello, test!", "model": "test-model"},
-        )
-        assert response.status_code == 200
-        assert response.json()["content"] == "test"
-
-
-def test_chat_agent_completion_with_invalid_knowledge_base_uuid(
-    authenticated_client: TestClient,
-    deps: Deps,
-) -> None:
-    """Test that chat agent completion endpoint properly validates knowledge_base_id UUID format."""
-    # Test with invalid UUID format
-    response = authenticated_client.post(
-        "/api/v1/chat/agent/completions",
-        json={
-            "message": "Hello, test!",
-            "model": "test-model",
-            "knowledge_base_id": "not-a-valid-uuid",
-        },
-    )
-    assert response.status_code == 400
-    assert "Invalid knowledge_base_id format" in response.json()["detail"]
-
-    # Test with valid UUID format (should not fail on UUID validation)
-    # Mock the necessary components to prevent the test from going too deep
-    test_chat = Chat(uuid=uuidpkg.uuid4(), name="New Chat")
-
     with (
-        patch.object(
-            deps.chat_repo, "create_chat", new_callable=AsyncMock
-        ) as mock_create_chat,
-        patch.object(
-            deps.knowledge_base_repo, "get_knowledge_base", new_callable=AsyncMock
-        ) as mock_get_kb,
+        patch.object(deps.chat_repo, "create_chat") as mock_create_chat,
         patch.object(
             deps.message_repo, "create_message", new_callable=AsyncMock
-        ) as mock_create_message,
-        patch("app.api.v1.chat.initialize_deployment") as mock_init_deployment,
-        patch("app.api.v1.chat.AsyncOpenAI") as mock_openai,
-        patch("app.api.v1.chat.augment_message_with_files") as mock_augment,
+        ) as mock_create_msg,
+        patch.object(
+            deps.message_repo, "update_message", new_callable=AsyncMock
+        ) as mock_update_msg,
     ):
-        mock_create_chat.return_value = test_chat
-        mock_get_kb.return_value = (
-            None  # No knowledge base found, but that's OK for this test
-        )
-        mock_create_message.return_value = MagicMock()
-        mock_init_deployment.return_value = (MagicMock(), "http://test-url")
-        mock_augment.return_value = "test message"
+        mock_create_chat.return_value = sample_chat
+        mock_create_msg.side_effect = [sample_user_message, sample_llm_message]
 
-        # Mock OpenAI client
-        mock_openai_instance = MagicMock()
-        mock_openai.return_value.__aenter__.return_value = mock_openai_instance
-
-        # Mock the chat completion response
-        mock_response = MagicMock()
-        mock_response.choices = [MagicMock()]
-        mock_response.choices[0].message.content = "test response"
-        mock_openai_instance.chat.completions.create = AsyncMock(
-            return_value=mock_response
-        )
-
-        valid_uuid = str(uuidpkg.uuid4())
         response = authenticated_client.post(
-            "/api/v1/chat/agent/completions",
+            "/api/v1/chat",
             json={
-                "message": "Hello, test!",
-                "model": "test-model",
-                "knowledge_base_id": valid_uuid,
+                "message": sample_user_message.content,
+                "model": sample_user_message.model,
             },
         )
-        # May still fail for other reasons (like knowledge base not found), but not due to UUID format
-        assert (
-            response.status_code != 400
-            or "Invalid knowledge_base_id format"
-            not in str(response.json().get("detail", ""))
-        )
+        assert response.status_code == 200
+        assert response.json() == sample_chat.dump_json_compatible()
 
-
-def test_chat_completions_with_invalid_knowledge_base_uuid(
-    authenticated_client: TestClient,
-    deps: Deps,
-    mock_dr_client: MagicMock,
-    mock_openai_client: MagicMock,
-    mock_message_repo: MagicMock,
-) -> None:
-    """Test that chat completions endpoint properly validates knowledge_base_id UUID format."""
-    # Test with invalid UUID format
-    response = authenticated_client.post(
-        "/api/v1/chat/completions",
-        json={
-            "message": "Hello, test!",
-            "model": "test-model",
-            "knowledge_base_id": "not-a-valid-uuid",
-        },
-    )
-    assert response.status_code == 400
-    assert "Invalid knowledge_base_id format" in response.json()["detail"]
-
-    # Mock the chat_repo.create_chat method to return a proper Chat object
-    test_chat = Chat(uuid=uuidpkg.uuid4(), name="New Chat")
-    with patch.object(
-        deps.chat_repo, "create_chat", new_callable=AsyncMock
-    ) as mock_create_chat:
-        mock_create_chat.return_value = test_chat
-
-        valid_uuid = str(uuidpkg.uuid4())
-        response = authenticated_client.post(
-            "/api/v1/chat/completions",
-            json={
-                "message": "Hello, test!",
-                "model": "test-model",
-                "knowledge_base_id": valid_uuid,
-            },
-        )
-        # May still fail for other reasons (like knowledge base not found), but not due to UUID format
-        assert (
-            response.status_code != 400
-            or "Invalid knowledge_base_id format"
-            not in str(response.json().get("detail", ""))
+        called_kwargs = mock_update_msg.call_args.kwargs
+        assert called_kwargs["uuid"] == sample_llm_message.uuid
+        assert called_kwargs["update"] == MessageUpdate(
+            content="test", in_progress=False
         )
 
 
 def test_get_chats_with_authentication(
-    deps: Deps, authenticated_client: TestClient
+    deps: Deps, authenticated_client: TestClient, sample_chat: Chat
 ) -> None:
     """Example test showing how easy it is to test authenticated endpoints."""
-    # Mock get_all_chats to return some test data
-    test_chat = Chat(uuid=uuidpkg.uuid4(), name="Test Chat")
-
     with (
         patch.object(
             deps.chat_repo, "get_all_chats", new_callable=AsyncMock
@@ -224,10 +176,9 @@ def test_get_chats_with_authentication(
             deps.message_repo, "get_last_messages", new_callable=AsyncMock
         ) as mock_get_messages,
     ):
-        mock_get_chats.return_value = [test_chat]
+        mock_get_chats.return_value = [sample_chat]
         mock_get_messages.return_value = {}
 
-        # Make the request - authentication is handled automatically!
         response = authenticated_client.get("/api/v1/chat")
 
         assert response.status_code == 200
@@ -236,34 +187,30 @@ def test_get_chats_with_authentication(
         assert chats[0]["name"] == "Test Chat"
 
 
-# Tests for chat deletion functionality
-def test_delete_chat_success(deps: Deps, authenticated_client: TestClient) -> None:
+# Chat deletion tests
+def test_delete_chat_success(
+    deps: Deps, authenticated_client: TestClient, sample_chat: Chat
+) -> None:
     """Test successful chat deletion."""
-    chat_uuid = uuidpkg.uuid4()
-    deleted_chat = Chat(uuid=chat_uuid, name="Test Chat")
-
-    # Mock the delete_chat method to return the deleted chat
     with patch.object(
         deps.chat_repo, "delete_chat", new_callable=AsyncMock
     ) as mock_delete:
-        mock_delete.return_value = deleted_chat
+        mock_delete.return_value = sample_chat
 
-        response = authenticated_client.delete(f"/api/v1/chat/{chat_uuid}")
+        response = authenticated_client.delete(f"/api/v1/chat/{sample_chat.uuid}")
 
         assert response.status_code == 200
         response_data = response.json()
-        assert response_data["uuid"] == str(chat_uuid)
+        assert response_data["uuid"] == str(sample_chat.uuid)
         assert response_data["name"] == "Test Chat"
 
-        # Verify the delete_chat method was called with correct UUID
-        mock_delete.assert_called_once_with(chat_uuid)
+        mock_delete.assert_called_once_with(sample_chat.uuid)
 
 
 def test_delete_chat_not_found(deps: Deps, authenticated_client: TestClient) -> None:
     """Test chat deletion when chat doesn't exist."""
     chat_uuid = uuidpkg.uuid4()
 
-    # Mock the delete_chat method to return None (chat not found)
     with patch.object(
         deps.chat_repo, "delete_chat", new_callable=AsyncMock
     ) as mock_delete:
@@ -274,7 +221,6 @@ def test_delete_chat_not_found(deps: Deps, authenticated_client: TestClient) -> 
         assert response.status_code == 404
         assert response.json()["detail"] == "chat not found"
 
-        # Verify the delete_chat method was called
         mock_delete.assert_called_once_with(chat_uuid)
 
 
@@ -288,341 +234,576 @@ def test_delete_chat_invalid_uuid(deps: Deps, authenticated_client: TestClient) 
     assert response.status_code == 422
 
 
+@pytest.mark.parametrize("model", ["test-model", "ttmdocs-agents"])
+def test_chat_completions_with_invalid_knowledge_base_uuid(
+    authenticated_client: TestClient,
+    deps: Deps,
+    mock_dr_client: MagicMock,
+    mock_litellm_completion: MagicMock,
+    sample_chat: Chat,
+    sample_user_message: Message,
+    sample_llm_message: Message,
+    model: str,
+) -> None:
+    """Test that chat completions endpoint properly validates knowledge_base_id UUID format."""
+    with (
+        patch.object(deps.chat_repo, "create_chat") as mock_create_chat,
+        patch.object(
+            deps.message_repo, "create_message", new_callable=AsyncMock
+        ) as mock_create_msg,
+        patch.object(
+            deps.message_repo, "update_message", new_callable=AsyncMock
+        ) as mock_update_msg,
+        patch(
+            "app.api.v1.chat._send_chat_completion", wraps=_send_chat_completion
+        ) as chat_completion_spy,
+        patch(
+            "app.api.v1.chat._send_chat_agent_completion",
+            wraps=_send_chat_agent_completion,
+        ) as chat_agent_completion_spy,
+    ):
+        mock_create_chat.return_value = sample_chat
+        sample_user_message.model = model
+        sample_llm_message.model = model
+        mock_create_msg.side_effect = [sample_user_message, sample_llm_message]
+
+        response = authenticated_client.post(
+            "/api/v1/chat",
+            json={
+                "message": sample_user_message.content,
+                "model": model,
+                "knowledge_base_id": "not-a-valid-uuid",
+            },
+        )
+        assert response.status_code == 200
+        assert response.json() == sample_chat.dump_json_compatible()
+
+        # Make sure the right completion function was called
+        if model == "test-model":
+            assert chat_completion_spy.call_count == 1
+        if model == "ttmdocs-agents":
+            assert chat_agent_completion_spy.call_count == 1
+
+        called_kwargs = mock_update_msg.call_args.kwargs
+        assert called_kwargs["uuid"] == sample_llm_message.uuid
+        assert called_kwargs["update"] == MessageUpdate(
+            error="400: Invalid knowledge_base_id format", in_progress=False
+        )
+
+
+@pytest.mark.parametrize("model", ["test-model", "ttmdocs-agents"])
+def test_chat_completion_with_valid_knowledge_base_uuid(
+    authenticated_client: TestClient,
+    deps: Deps,
+    sample_chat: Chat,
+    sample_user_message: Message,
+    sample_llm_message: Message,
+    model: str,
+) -> None:
+    """Test that chat agent completion endpoint properly validates knowledge_base_id UUID format."""
+    with (
+        patch.object(deps.chat_repo, "create_chat") as mock_create_chat,
+        patch.object(
+            deps.message_repo, "create_message", new_callable=AsyncMock
+        ) as mock_create_msg,
+        patch.object(
+            deps.message_repo, "update_message", new_callable=AsyncMock
+        ) as mock_update_msg,
+        patch.object(
+            deps.knowledge_base_repo, "get_knowledge_base", new_callable=AsyncMock
+        ) as mock_get_kb,
+        patch("litellm.acompletion") as mock_acompletion,
+        patch("app.api.v1.chat._augment_message_with_files") as mock_augment,
+        patch(
+            "app.api.v1.chat._send_chat_completion", wraps=_send_chat_completion
+        ) as chat_completion_spy,
+        patch(
+            "app.api.v1.chat._send_chat_agent_completion",
+            wraps=_send_chat_agent_completion,
+        ) as chat_agent_completion_spy,
+    ):
+        mock_create_chat.return_value = sample_chat
+        mock_kb = MagicMock()
+        valid_uuid = str(uuidpkg.uuid4())
+        mock_kb.uuid = valid_uuid
+        mock_get_kb.return_value = mock_kb
+        sample_user_message.model = model
+        sample_llm_message.model = model
+        mock_create_msg.side_effect = [sample_user_message, sample_llm_message]
+        mock_augment.return_value = "test message"
+
+        async def _mock_completion(*args: Any, **kwargs: Any) -> dict[str, Any]:
+            return {
+                "choices": [
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "content": "Test KB agent response",
+                        }
+                    }
+                ]
+            }
+
+        mock_acompletion.side_effect = _mock_completion
+
+        authenticated_client.post(
+            "/api/v1/chat",
+            json={
+                "message": "Hello, test!",
+                "model": model,
+                "knowledge_base_id": valid_uuid,
+            },
+        )
+
+        # Make sure the right completion function was called
+        if model == "test-model":
+            assert chat_completion_spy.call_count == 1
+        if model == "ttmdocs-agents":
+            assert chat_agent_completion_spy.call_count == 1
+
+        called_kwargs = mock_update_msg.call_args.kwargs
+        assert called_kwargs["uuid"] == sample_llm_message.uuid
+        assert called_kwargs["update"] == MessageUpdate(
+            content="Test KB agent response", in_progress=False
+        )
+
+
+@pytest.mark.parametrize("model", ["test-model", "ttmdocs-agents"])
+def test_chat_completions_with_invalid_file_ids(
+    authenticated_client: TestClient,
+    deps: Deps,
+    sample_chat: Chat,
+    sample_user_message: Message,
+    sample_llm_message: Message,
+    model: str,
+) -> None:
+    """Test that chat completions endpoint properly validates file_ids UUID format."""
+    with (
+        patch.object(deps.chat_repo, "get_chat") as mock_get_chat,
+        patch.object(
+            deps.message_repo, "create_message", new_callable=AsyncMock
+        ) as mock_create_msg,
+        patch.object(
+            deps.message_repo, "update_message", new_callable=AsyncMock
+        ) as mock_update_msg,
+        patch(
+            "app.api.v1.chat._send_chat_completion", wraps=_send_chat_completion
+        ) as chat_completion_spy,
+        patch(
+            "app.api.v1.chat._send_chat_agent_completion",
+            wraps=_send_chat_agent_completion,
+        ) as chat_agent_completion_spy,
+    ):
+        mock_get_chat.return_value = sample_chat
+        sample_user_message.model = model
+        sample_llm_message.model = model
+        mock_create_msg.side_effect = [sample_user_message, sample_llm_message]
+
+        response = authenticated_client.post(
+            f"/api/v1/chat/{sample_chat.uuid}/messages",
+            json={
+                "message": "Hello, test!",
+                "model": model,
+                "file_ids": ["not-a-valid-uuid", "also-invalid"],
+            },
+        )
+        assert response.status_code == 200
+        assert response.json() == [
+            sample_user_message.dump_json_compatible(),
+            sample_llm_message.dump_json_compatible(),
+        ]
+
+        # Make sure the right completion function was called
+        if model == "test-model":
+            assert chat_completion_spy.call_count == 1
+        if model == "ttmdocs-agents":
+            assert chat_agent_completion_spy.call_count == 1
+
+        called_kwargs = mock_update_msg.call_args.kwargs
+        assert called_kwargs["uuid"] == sample_llm_message.uuid
+        assert called_kwargs["update"] == MessageUpdate(
+            error="400: Invalid file_id format: not-a-valid-uuid", in_progress=False
+        )
+
+
+# Chat repository tests
 @pytest.mark.asyncio
-async def test_chat_repository_delete_chat_success() -> None:
+async def test_chat_repository_delete_chat_success(sample_chat: Chat) -> None:
     """Test ChatRepository.delete_chat method directly."""
-    # Mock database session and operations
     mock_session = AsyncMock()
     mock_db = MagicMock()
     mock_db.session.return_value.__aenter__.return_value = mock_session
 
-    # Create a test chat
-    chat_uuid = uuidpkg.uuid4()
-    test_chat = Chat(uuid=chat_uuid, name="Test Chat")
-
-    # Mock the query result - make first() return the actual object
     mock_response = MagicMock()
-    mock_response.first.return_value = test_chat
+    mock_response.first.return_value = sample_chat
     mock_session.exec.return_value = mock_response
 
-    # Create repository and test deletion
     repo = ChatRepository(mock_db)
-    result = await repo.delete_chat(chat_uuid)
+    result = await repo.delete_chat(sample_chat.uuid)
 
-    # Verify the result
-    assert result == test_chat
-
-    # Verify the expected calls were made
+    assert result == sample_chat
     mock_session.exec.assert_called_once()
-    mock_session.delete.assert_called_once_with(test_chat)
+    mock_session.delete.assert_called_once_with(sample_chat)
     mock_session.commit.assert_called_once()
 
 
 @pytest.mark.asyncio
 async def test_chat_repository_delete_chat_not_found() -> None:
     """Test ChatRepository.delete_chat when chat doesn't exist."""
-    # Mock database session and operations
     mock_session = AsyncMock()
     mock_db = MagicMock()
     mock_db.session.return_value.__aenter__.return_value = mock_session
 
     chat_uuid = uuidpkg.uuid4()
 
-    # Mock the query result to return None (chat not found)
     mock_response = MagicMock()
     mock_response.first.return_value = None
     mock_session.exec.return_value = mock_response
 
-    # Create repository and test deletion
     repo = ChatRepository(mock_db)
     result = await repo.delete_chat(chat_uuid)
 
-    # Verify the result
     assert result is None
-
-    # Verify the expected calls were made
     mock_session.exec.assert_called_once()
-    # delete should not be called if chat wasn't found
     mock_session.delete.assert_not_called()
     mock_session.commit.assert_not_called()
 
 
-def test_get_all_chats_includes_updated_list_after_deletion(
-    deps: Deps, authenticated_client: TestClient
-) -> None:
-    """Test that get all chats reflects deletions."""
-    # Only need chat2 since we're testing the remaining chats after deletion
-    chat2 = Chat(uuid=uuidpkg.uuid4(), name="Chat 2")
-
-    # Mock get_all_chats to return remaining chats after deletion
-    with (
-        patch.object(
-            deps.chat_repo, "get_all_chats", new_callable=AsyncMock
-        ) as mock_get_chats,
-        patch.object(
-            deps.message_repo, "get_last_messages", new_callable=AsyncMock
-        ) as mock_get_messages,
-    ):
-        mock_get_chats.return_value = [chat2]
-        mock_get_messages.return_value = {}
-
-        response = authenticated_client.get("/api/v1/chat")
-
-        assert response.status_code == 200
-        chats = response.json()
-        assert len(chats) == 1
-        assert chats[0]["name"] == "Chat 2"
-
-
-def test_delete_chat_cascade_behavior_integration(
-    deps: Deps, authenticated_client: TestClient
-) -> None:
-    """Test that deleting a chat cascades to delete related messages."""
-    chat_uuid = uuidpkg.uuid4()
-    deleted_chat = Chat(uuid=chat_uuid, name="Test Chat")
-
-    # Mock the delete operation - CASCADE should be handled by the database
-    with patch.object(
-        deps.chat_repo, "delete_chat", new_callable=AsyncMock
-    ) as mock_delete:
-        mock_delete.return_value = deleted_chat
-
-        response = authenticated_client.delete(f"/api/v1/chat/{chat_uuid}")
-
-        assert response.status_code == 200
-        response_data = response.json()
-        assert response_data["uuid"] == str(chat_uuid)
-
-        # Verify the repository method was called
-        mock_delete.assert_called_once_with(chat_uuid)
-
-
-def test_chat_completions_with_invalid_file_ids(
-    authenticated_client: TestClient,
-) -> None:
-    """Test that chat completions endpoint properly validates file_ids UUID format."""
-    # Test with invalid file_id UUID format
-    response = authenticated_client.post(
-        "/api/v1/chat/completions",
-        json={
-            "message": "Hello, test!",
-            "model": "test-model",
-            "file_ids": ["not-a-valid-uuid", "also-invalid"],
-        },
-    )
-    assert response.status_code == 400
-    assert "Invalid file_id format" in response.json()["detail"]
-
-
-def test_chat_agent_completion_with_invalid_file_ids(
-    authenticated_client: TestClient,
-) -> None:
-    """Test that chat agent completion endpoint properly validates file_ids UUID format."""
-    # Test with invalid file_id UUID format
-    response = authenticated_client.post(
-        "/api/v1/chat/agent/completions",
-        json={
-            "message": "Hello, test!",
-            "model": "test-model",
-            "file_ids": ["not-a-valid-uuid"],
-        },
-    )
-    assert response.status_code == 400
-    assert "Invalid file_id format" in response.json()["detail"]
-
-
+# _get_or_create_chat_id tests
 @pytest.mark.asyncio
-async def test_get_or_create_chat_id_handles_no_result_found() -> None:
+async def test_get_or_create_chat_id_handles_no_result_found(
+    test_user: User,
+) -> None:
     """Test that _get_or_create_chat_id properly handles NoResultFound exception."""
-    # Mock database and repository
     mock_db = MagicMock()
-    mock_session = AsyncMock()
-    mock_db.session.return_value.__aenter__.return_value = mock_session
-
-    # Create test user
-    test_user = User(
-        uuid=uuidpkg.uuid4(),
-        email="test@example.com",
-        first_name="Test",
-        last_name="User",
-    )
-
-    # Create repository with mocked database
     chat_repo = ChatRepository(mock_db)
 
-    # Mock create_chat to return a new chat
     new_chat_uuid = uuidpkg.uuid4()
     mock_new_chat = MagicMock()
     mock_new_chat.uuid = new_chat_uuid
 
-    # Test with a valid UUID that doesn't exist in database
     existing_uuid_str = str(uuidpkg.uuid4())
 
-    # Use patch.object to mock the methods properly for mypy
     with (
         patch.object(chat_repo, "get_chat", new_callable=AsyncMock) as mock_get_chat,
         patch.object(
             chat_repo, "create_chat", new_callable=AsyncMock
         ) as mock_create_chat,
     ):
-        # Configure mocks
         mock_get_chat.side_effect = NoResultFound("No chat found")
         mock_create_chat.return_value = mock_new_chat
 
-        # Call the function
         result_uuid, was_created = await _get_or_create_chat_id(
             chat_repo, existing_uuid_str, test_user
         )
 
-        # Verify that a new chat was created because the original one wasn't found
         assert was_created is True
         assert result_uuid == new_chat_uuid
-
-        # Verify that get_chat was called with the original UUID
         mock_get_chat.assert_called_once_with(uuidpkg.UUID(existing_uuid_str))
-
-        # Verify that create_chat was called when the original chat wasn't found
         mock_create_chat.assert_called_once()
 
 
 @pytest.mark.asyncio
-async def test_get_or_create_chat_id_reuses_existing_chat() -> None:
+async def test_get_or_create_chat_id_reuses_existing_chat(
+    test_user: User,
+    sample_chat: Chat,
+) -> None:
     """Test that _get_or_create_chat_id reuses existing chat when found."""
-    # Mock database and repository
     mock_db = MagicMock()
     chat_repo = ChatRepository(mock_db)
 
-    # Create test user
-    test_user = User(
-        uuid=uuidpkg.uuid4(),
-        email="test@example.com",
-        first_name="Test",
-        last_name="User",
-    )
+    existing_uuid_str = str(sample_chat.uuid)
 
-    # Create existing chat
-    existing_chat_uuid = uuidpkg.uuid4()
-    existing_chat = Chat(uuid=existing_chat_uuid, name="Existing Chat")
-
-    # Test with a valid UUID that exists in database
-    existing_uuid_str = str(existing_chat_uuid)
-
-    # Use patch.object to mock the methods properly for mypy
     with (
         patch.object(chat_repo, "get_chat", new_callable=AsyncMock) as mock_get_chat,
         patch.object(
             chat_repo, "create_chat", new_callable=AsyncMock
         ) as mock_create_chat,
     ):
-        # Configure mocks
-        mock_get_chat.return_value = existing_chat
+        mock_get_chat.return_value = sample_chat
 
-        # Call the function
         result_uuid, was_created = await _get_or_create_chat_id(
             chat_repo, existing_uuid_str, test_user
         )
 
-        # Verify that the existing chat was reused
         assert was_created is False
-        assert result_uuid == existing_chat_uuid
-
-        # Verify that get_chat was called with the UUID
-        mock_get_chat.assert_called_once_with(existing_chat_uuid)
-
-        # Verify that create_chat was NOT called since chat existed
+        assert result_uuid == sample_chat.uuid
+        mock_get_chat.assert_called_once_with(sample_chat.uuid)
         mock_create_chat.assert_not_called()
 
 
 @pytest.mark.asyncio
-async def test_get_or_create_chat_id_creates_new_chat_when_no_id_provided() -> None:
+async def test_get_or_create_chat_id_creates_new_chat_when_no_id_provided(
+    test_user: User,
+) -> None:
     """Test that _get_or_create_chat_id creates new chat when no chat_id is provided."""
-    # Mock database and repository
     mock_db = MagicMock()
     chat_repo = ChatRepository(mock_db)
 
-    # Create test user
-    test_user = User(
-        uuid=uuidpkg.uuid4(),
-        email="test@example.com",
-        first_name="Test",
-        last_name="User",
-    )
-
-    # Mock create_chat to return a new chat
     new_chat_uuid = uuidpkg.uuid4()
     mock_new_chat = MagicMock()
     mock_new_chat.uuid = new_chat_uuid
 
-    # Use patch.object to mock the methods properly for mypy
     with (
         patch.object(chat_repo, "get_chat", new_callable=AsyncMock) as mock_get_chat,
         patch.object(
             chat_repo, "create_chat", new_callable=AsyncMock
         ) as mock_create_chat,
     ):
-        # Configure mocks
         mock_create_chat.return_value = mock_new_chat
 
-        # Test with no chat_id provided
         result_uuid, was_created = await _get_or_create_chat_id(
             chat_repo, None, test_user
         )
 
-        # Verify that a new chat was created
         assert was_created is True
         assert result_uuid == new_chat_uuid
-
-        # Verify that get_chat was NOT called since no ID was provided
         mock_get_chat.assert_not_called()
-
-        # Verify that create_chat was called
         mock_create_chat.assert_called_once()
 
 
 @pytest.mark.asyncio
-async def test_get_or_create_chat_id_creates_new_chat_with_invalid_uuid_format() -> (
-    None
-):
+async def test_get_or_create_chat_id_creates_new_chat_with_invalid_uuid_format(
+    test_user: User,
+) -> None:
     """Test that _get_or_create_chat_id creates new chat when chat_id has invalid UUID format."""
-    # Mock database and repository
     mock_db = MagicMock()
     chat_repo = ChatRepository(mock_db)
 
-    # Create test user
-    test_user = User(
-        uuid=uuidpkg.uuid4(),
-        email="test@example.com",
-        first_name="Test",
-        last_name="User",
-    )
-
-    # Mock create_chat to return a new chat
     new_chat_uuid = uuidpkg.uuid4()
     mock_new_chat = MagicMock()
     mock_new_chat.uuid = new_chat_uuid
 
-    # Use patch.object to mock the methods properly for mypy
     with (
         patch.object(chat_repo, "get_chat", new_callable=AsyncMock) as mock_get_chat,
         patch.object(
             chat_repo, "create_chat", new_callable=AsyncMock
         ) as mock_create_chat,
     ):
-        # Configure mocks
         mock_create_chat.return_value = mock_new_chat
 
-        # Test with invalid UUID format
         invalid_chat_id = "not-a-valid-uuid-format"
         result_uuid, was_created = await _get_or_create_chat_id(
             chat_repo, invalid_chat_id, test_user
         )
 
-        # Verify that a new chat was created due to invalid UUID format
         assert was_created is True
         assert result_uuid == new_chat_uuid
-
-        # Verify that get_chat was NOT called since UUID parsing failed
         mock_get_chat.assert_not_called()
-
-        # Verify that create_chat was called when UUID parsing failed
         mock_create_chat.assert_called_once()
+
+
+# APIConnectionError tests
+@pytest.mark.parametrize("model", ["test-model", "ttmdocs-agents"])
+def test_chat_completion_api_connection_error(
+    deps: Deps,
+    authenticated_client: TestClient,
+    mock_dr_client: MagicMock,
+    sample_chat: Chat,
+    sample_user_message: Message,
+    sample_llm_message: Message,
+    model: str,
+    mock_api_connection_error: litellm.exceptions.APIConnectionError,
+) -> None:
+    """Test that chat completion endpoint properly handles APIConnectionError."""
+    with (
+        patch.object(deps.chat_repo, "create_chat") as mock_create_chat,
+        patch.object(
+            deps.message_repo, "create_message", new_callable=AsyncMock
+        ) as mock_create_msg,
+        patch.object(
+            deps.message_repo, "update_message", new_callable=AsyncMock
+        ) as mock_update_msg,
+        patch("litellm.acompletion") as mock_acompletion,
+        patch(
+            "app.api.v1.chat._send_chat_completion", wraps=_send_chat_completion
+        ) as chat_completion_spy,
+        patch(
+            "app.api.v1.chat._send_chat_agent_completion",
+            wraps=_send_chat_agent_completion,
+        ) as chat_agent_completion_spy,
+    ):
+        mock_create_chat.return_value = sample_chat
+        sample_user_message.model = model
+        sample_llm_message.model = model
+        mock_create_msg.side_effect = [sample_user_message, sample_llm_message]
+        mock_acompletion.side_effect = mock_api_connection_error
+
+        response = authenticated_client.post(
+            "/api/v1/chat",
+            json={"message": "Hello, test!", "model": model},
+        )
+
+        assert response.status_code == 200
+        assert response.json() == sample_chat.dump_json_compatible()
+
+        # Make sure the right completion function was called
+        if model == "test-model":
+            assert chat_completion_spy.call_count == 1
+        if model == "ttmdocs-agents":
+            assert chat_agent_completion_spy.call_count == 1
+
+        called_kwargs = mock_update_msg.call_args.kwargs
+        assert called_kwargs["uuid"] == sample_llm_message.uuid
+        assert called_kwargs["update"] == MessageUpdate(
+            error='litellm.APIConnectionError: litellm.APIConnectionError: DatarobotException - {"message": "Request is too large. The request size is 278284656 bytes and the maximum message size allowed by the server is 11264MB"}',
+            in_progress=False,
+        )
+
+
+@pytest.mark.parametrize("model", ["test-model", "ttmdocs-agents"])
+def test_chat_completion_api_connection_error_with_files(
+    deps: Deps,
+    authenticated_client: TestClient,
+    mock_dr_client: MagicMock,
+    sample_chat: Chat,
+    sample_user_message: Message,
+    sample_llm_message: Message,
+    model: str,
+) -> None:
+    """Test that chat completion endpoint properly handles APIConnectionError."""
+    with (
+        patch.object(deps.chat_repo, "get_chat") as mock_get_chat,
+        patch.object(
+            deps.message_repo, "create_message", new_callable=AsyncMock
+        ) as mock_create_msg,
+        patch.object(
+            deps.message_repo, "update_message", new_callable=AsyncMock
+        ) as mock_update_msg,
+        patch.object(
+            deps.file_repo, "get_files", new_callable=AsyncMock
+        ) as mock_get_files,
+        patch.object(
+            deps.knowledge_base_repo, "get_knowledge_base", new_callable=AsyncMock
+        ) as mock_get_kb,
+        patch("litellm.acompletion") as mock_acompletion,
+        patch("app.api.v1.chat._augment_message_with_files") as mock_augment,
+        patch(
+            "app.api.v1.chat._send_chat_completion", wraps=_send_chat_completion
+        ) as chat_completion_spy,
+        patch(
+            "app.api.v1.chat._send_chat_agent_completion",
+            wraps=_send_chat_agent_completion,
+        ) as chat_agent_completion_spy,
+    ):
+        mock_get_chat.return_value = sample_chat
+        sample_user_message.model = model
+        sample_llm_message.model = model
+        mock_create_msg.side_effect = [sample_user_message, sample_llm_message]
+        mock_get_files.return_value = []
+        mock_get_kb.return_value = None
+        mock_augment.return_value = "augmented message with files"
+
+        # Different error scenario
+        error_message = '{"message": "Connection timeout"}'
+        mock_acompletion.side_effect = litellm.exceptions.APIConnectionError(
+            f"litellm.APIConnectionError: {error_message}",
+            llm_provider="datarobot",
+            model=model,
+        )
+
+        response = authenticated_client.post(
+            f"/api/v1/chat/{sample_chat.uuid}/messages",
+            json={"message": "Hello, test!", "model": model},
+        )
+
+        assert response.status_code == 200
+        assert response.json() == [
+            sample_user_message.dump_json_compatible(),
+            sample_llm_message.dump_json_compatible(),
+        ]
+
+        # Make sure the right completion function was called
+        if model == "test-model":
+            assert chat_completion_spy.call_count == 1
+        if model == "ttmdocs-agents":
+            assert chat_agent_completion_spy.call_count == 1
+
+        called_kwargs = mock_update_msg.call_args.kwargs
+        assert called_kwargs["uuid"] == sample_llm_message.uuid
+        assert called_kwargs["update"] == MessageUpdate(
+            error='litellm.APIConnectionError: litellm.APIConnectionError: {"message": "Connection timeout"}',
+            in_progress=False,
+        )
+
+
+@pytest.mark.parametrize("model", ["test-model", "ttmdocs-agents"])
+def test_chat_completion_api_connection_error_with_knowledge_base(
+    authenticated_client: TestClient,
+    deps: Deps,
+    sample_chat: Chat,
+    sample_user_message: Message,
+    sample_llm_message: Message,
+    model: str,
+) -> None:
+    """Test APIConnectionError handling in chat agent completion with knowledge base."""
+    kb_uuid = uuidpkg.uuid4()
+    with (
+        patch.object(deps.chat_repo, "create_chat") as mock_create_chat,
+        patch.object(
+            deps.message_repo, "create_message", new_callable=AsyncMock
+        ) as mock_create_msg,
+        patch.object(
+            deps.message_repo, "update_message", new_callable=AsyncMock
+        ) as mock_update_msg,
+        patch.object(
+            deps.knowledge_base_repo, "get_knowledge_base", new_callable=AsyncMock
+        ) as mock_get_kb,
+        patch("app.api.v1.chat.get_knowledge_base_schema") as mock_get_schema,
+        patch("litellm.acompletion") as mock_acompletion,
+        patch("app.api.v1.chat._augment_message_with_files") as mock_augment,
+        patch(
+            "app.api.v1.chat._send_chat_completion", wraps=_send_chat_completion
+        ) as chat_completion_spy,
+        patch(
+            "app.api.v1.chat._send_chat_agent_completion",
+            wraps=_send_chat_agent_completion,
+        ) as chat_agent_completion_spy,
+    ):
+        mock_create_chat.return_value = sample_chat
+        sample_user_message.model = model
+        sample_llm_message.model = model
+        mock_create_msg.side_effect = [sample_user_message, sample_llm_message]
+
+        # Mock knowledge base
+        mock_kb = MagicMock()
+        mock_kb.uuid = kb_uuid
+        mock_get_kb.return_value = mock_kb
+
+        # Mock knowledge base schema
+        mock_schema = MagicMock()
+        mock_schema.model_dump.return_value = {"description": "test schema"}
+        mock_schema.description = "test knowledge base"
+        mock_get_schema.return_value = mock_schema
+
+        mock_augment.return_value = "test message"
+
+        # Network error
+        error_message = '{"message": "Network unreachable"}'
+        mock_acompletion.side_effect = litellm.exceptions.APIConnectionError(
+            f"litellm.APIConnectionError: {error_message}",
+            llm_provider="datarobot",
+            model="test-model",
+        )
+
+        authenticated_client.post(
+            "/api/v1/chat",
+            json={
+                "message": "Query the knowledge base",
+                "model": model,
+                "knowledge_base_id": str(kb_uuid),
+            },
+        )
+
+        # Make sure the right completion function was called
+        if model == "test-model":
+            assert chat_completion_spy.call_count == 1
+        if model == "ttmdocs-agents":
+            assert chat_agent_completion_spy.call_count == 1
+
+        called_kwargs = mock_update_msg.call_args.kwargs
+        assert called_kwargs["uuid"] == sample_llm_message.uuid
+        assert called_kwargs["update"] == MessageUpdate(
+            error='litellm.APIConnectionError: litellm.APIConnectionError: {"message": "Network unreachable"}',
+            in_progress=False,
+        )

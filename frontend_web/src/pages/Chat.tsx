@@ -1,4 +1,4 @@
-import { useRef, useCallback, useEffect } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import drLogo from '@/assets/DataRobot_white.svg';
 
@@ -8,21 +8,18 @@ import { IChatMessage } from '@/api/chat/types.ts';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { ChatUserMessage } from '@/components/custom/chat-user-message';
 import { ChatResponseMessage } from '@/components/custom/chat-response-message';
+import { ChatLoadingScreen } from '@/components/custom/chat-loading-screen';
 import { useChatMessages } from '@/api/chat/hooks.ts';
 
 const Chat = () => {
     const { selectedLlmModel } = useAppState();
     const { chatId } = useParams<{ chatId: string }>();
-    const { data: messages = [] } = useChatMessages(chatId);
-    const hasPendingMessageRequest = useRef<boolean>(false);
+    const [hasPendingMessageRequest, setHasPendingMessageRequest] = useState<boolean>(false);
+    const { data: messages = [], isLoading: isMessagesLoading } = useChatMessages({
+        chatId,
+        shouldRefetch: hasPendingMessageRequest ? 5000 : undefined,
+    });
     const containerRef = useRef<HTMLDivElement>(null);
-
-    const setPendingMessage = useCallback(
-        (value: boolean) => {
-            hasPendingMessageRequest.current = value;
-        },
-        [hasPendingMessageRequest]
-    );
 
     useEffect(() => {
         const timeoutId = setTimeout(() => {
@@ -32,11 +29,27 @@ const Chat = () => {
             });
         }, 300); // Delay to ensure all messages are rendered
 
+        if (chatId && messages?.length > 0) {
+            if (hasPendingMessageRequest && !messages[messages.length - 1].in_progress) {
+                setHasPendingMessageRequest(false);
+            } else if (!hasPendingMessageRequest && messages[messages.length - 1]?.in_progress) {
+                setHasPendingMessageRequest(true);
+            }
+        }
+        if (!chatId && hasPendingMessageRequest) {
+            // Unblock new chats even if another chat is still pending
+            setHasPendingMessageRequest(false);
+        }
+
         return () => clearTimeout(timeoutId);
-    }, [messages]);
+    }, [messages, hasPendingMessageRequest, setHasPendingMessageRequest, chatId]);
+
+    if (isMessagesLoading) {
+        return <ChatLoadingScreen />;
+    }
 
     //If there are no messages or if chatId is not defined, show the initial prompt input
-    if (messages.length === 0 || (!chatId && !hasPendingMessageRequest.current)) {
+    if (messages.length === 0 || (!chatId && !hasPendingMessageRequest)) {
         return (
             <div className="content-center justify-items-center w-full h-full">
                 <div className="flex">
@@ -49,10 +62,7 @@ const Chat = () => {
                 <h1 className="text-4xl my-4" data-testid="app-model-name">
                     {selectedLlmModel.name}
                 </h1>
-                <ChatPromptInput
-                    isPendingMessage={hasPendingMessageRequest.current}
-                    setPendingMessage={setPendingMessage}
-                />
+                <ChatPromptInput hasPendingMessage={hasPendingMessageRequest} />
             </div>
         );
     }
@@ -80,18 +90,10 @@ const Chat = () => {
                             />
                         )
                     )}
-                    {hasPendingMessageRequest.current && (
-                        <ChatResponseMessage
-                            isPending
-                            key="response-loader"
-                            data-testid="pending-message-loader"
-                        />
-                    )}
                 </div>
             </ScrollArea>
             <ChatPromptInput
-                isPendingMessage={hasPendingMessageRequest.current}
-                setPendingMessage={setPendingMessage}
+                hasPendingMessage={hasPendingMessageRequest}
                 classNames="w-full self-end self-center mb-2 py-0 px-4"
             />
         </div>

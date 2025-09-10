@@ -96,6 +96,7 @@ export const useExternalFileUploadMutation = ({
 
         onSuccess: data => {
             queryClient.invalidateQueries({ queryKey: knowledgeBasesKeys.all });
+            queryClient.invalidateQueries({ queryKey: knowledgeBasesKeys.allFiles });
             onSuccess(data as FileSchema[]);
         },
 

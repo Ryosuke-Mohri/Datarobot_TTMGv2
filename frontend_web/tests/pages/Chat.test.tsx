@@ -6,6 +6,8 @@ import { renderWithProviders } from '../test-utils.tsx';
 import apiClient from '@/api/apiClient.ts';
 import { Routes, Route } from 'react-router-dom';
 import { PATHS } from '@/constants/paths.ts';
+import { server } from '../__mocks__/node.ts';
+import { http, HttpResponse } from 'msw';
 
 describe('Page: Chat', () => {
     it('renders the initial chat input', async () => {
@@ -29,7 +31,7 @@ describe('Page: Chat', () => {
         await userEvent.click(submitBtn);
 
         expect(postSpy).toHaveBeenCalledWith(
-            '/v1/chat/agent/completions',
+            '/v1/chat',
             {
                 message: 'Hello',
                 model: 'ttmdocs-agents',
@@ -41,6 +43,37 @@ describe('Page: Chat', () => {
     });
 
     it('renders the chat conversation after a message has been sent', async () => {
+        server.use(
+            http.get('api/v1/chat', () => {
+                return HttpResponse.json({
+                    uuid: 'chat-123-abc',
+                    name: 'New Chat',
+                    model: 'ttmdocs-agents',
+                    created_at: new Date('2025-09-08T12:00:00.000Z').toISOString(),
+                    updated_at: new Date('2025-09-08T12:00:00.000Z').toISOString(),
+                });
+            }),
+            http.get('api/v1/chat/:chatId/messages', () => {
+                return [
+                    HttpResponse.json([
+                        {
+                            role: 'user',
+                            content: 'Hello',
+                            chat_id: 'chat-123-abc',
+                            uuid: 'abc-123',
+                            in_progress: false,
+                        },
+                        {
+                            role: 'assistant',
+                            content: 'Agents Say Hello World!',
+                            chat_id: 'chat-123-abc',
+                            uuid: 'def-456',
+                            in_progress: false,
+                        },
+                    ]),
+                ];
+            })
+        );
         renderWithProviders(
             <Routes>
                 <Route path={PATHS.CHAT} element={<Chat />} />
@@ -53,6 +86,7 @@ describe('Page: Chat', () => {
         const submitBtn = await screen.findByTestId('chat-prompt-input-submit');
         await userEvent.type(textArea, 'Hello');
         await userEvent.click(submitBtn);
+
         const conversationView = await screen.findByTestId('chat-conversation-view');
         expect(conversationView).toBeInTheDocument();
 

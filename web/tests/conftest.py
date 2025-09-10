@@ -26,13 +26,13 @@ from fastapi.testclient import TestClient
 
 from app import create_app
 from app.auth.api_key import APIKeyValidator, DRUser
+from app.chats import ChatRepository
 from app.config import Config
 from app.db import DBCtx
 from app.deps import Deps, create_deps
 from app.files import FileRepository
 from app.knowledge_bases import KnowledgeBaseRepository
-from app.models.chats import ChatRepository
-from app.models.messages import MessageRepository
+from app.messages import MessageRepository
 from app.users.identity import AuthSchema, Identity, IdentityCreate, IdentityRepository
 from app.users.tokens import Tokens
 from app.users.user import User, UserCreate, UserRepository

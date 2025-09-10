@@ -24,8 +24,6 @@ from openai.types.chat import CompletionCreateParams
 from ragas.messages import AIMessage
 from tool import DocumentReadTool, FileListTool, KnowledgeBaseContentTool
 
-DEFAULT_MODEL = "datarobot/azure/gpt-4o-mini"
-
 
 class MyAgent:
     """MyAgent is a custom agent that uses CrewAI to plan, write, and edit content.
@@ -66,6 +64,9 @@ class MyAgent:
         self.api_base = api_base or os.environ.get("DATAROBOT_ENDPOINT")
         self.model = model
         self.config = Config()
+        self.default_model = self.config.llm_default_model
+        if not self.default_model.startswith("datarobot/"):
+            self.default_model = f"datarobot/{self.default_model}"
         self.timeout = timeout
         if isinstance(verbose, str):
             self.verbose = verbose.lower() == "true"
@@ -88,7 +89,10 @@ class MyAgent:
         return "https://api.datarobot.com"
 
     def model_factory(
-        self, model: str = DEFAULT_MODEL, use_deployment: bool = True
+        self,
+        model: str | None = None,
+        use_deployment: bool = True,
+        auto_model_override: bool = True,
     ) -> LLM:
         """Returns the model to use for the LLM.
 
@@ -98,7 +102,12 @@ class MyAgent:
         LLM Gateway.
 
         Args:
-            model: Optional[str]: The model to use. Defaults to None.
+            model: Optional[str]: The model to use. If none, it defaults to config.llm_default_model.
+            use_deployment: Optional[bool]: Whether to use the deployment ID from the config.
+                Defaults to True.
+            auto_model_override: Optional[bool]: If True, it will try and use the model
+                specified in the request but automatically back out if the LLM Gateway is
+                not available.
 
         Returns:
             str: The model to use.
@@ -108,6 +117,12 @@ class MyAgent:
             if use_deployment
             else self.api_base_litellm
         )
+        if model is None:
+            model = self.default_model
+        if auto_model_override and not self.config.use_datarobot_llm_gateway:
+            model = self.default_model
+        if self.verbose:
+            print(f"Using model: {model}")
         return LLM(
             model=model,
             api_base=api_base,

@@ -10,6 +10,9 @@ export const createInitialState = (): AppStateData => {
         selectedKnowledgeBaseId: getStorageItem(STORAGE_KEYS.SELECTED_KNOWLEDGE_BASE_ID)
             ? getStorageItem(STORAGE_KEYS.SELECTED_KNOWLEDGE_BASE_ID)
             : DEFAULT_VALUES.selectedKnowledgeBaseId,
+        selectedExternalFileId: getStorageItem(STORAGE_KEYS.SELECTED_EXTERNAL_FILE_ID)
+            ? getStorageItem(STORAGE_KEYS.SELECTED_EXTERNAL_FILE_ID)
+            : DEFAULT_VALUES.selectedExternalFileId,
         availableLlmModels: null,
         showRenameChatModalForId: DEFAULT_VALUES.showRenameChatModalForId,
     };
@@ -38,6 +41,16 @@ export const reducer = (state: AppStateData, action: Action): AppStateData => {
                 ...state,
                 selectedKnowledgeBaseId: action.payload.id,
             };
+        case ACTION_TYPES.SET_SELECTED_EXTERNAL_FILE_ID:
+            if (!action.payload.id) {
+                removeStorageItem(STORAGE_KEYS.SELECTED_EXTERNAL_FILE_ID);
+            } else {
+                setStorageItem(STORAGE_KEYS.SELECTED_EXTERNAL_FILE_ID, action.payload.id);
+            }
+            return {
+                ...state,
+                selectedExternalFileId: action.payload.id,
+            };
         case ACTION_TYPES.SET_SHOW_RENAME_CHAT_MODAL_FOR_ID:
             return {
                 ...state,
@@ -59,6 +72,10 @@ export const actions = {
     }),
     setSelectedKnowledgeBaseId: (id: string | null): Action => ({
         type: ACTION_TYPES.SET_SELECTED_KNOWLEDGE_BASE_ID,
+        payload: { id },
+    }),
+    setSelectedExternalFileId: (id: string | null): Action => ({
+        type: ACTION_TYPES.SET_SELECTED_EXTERNAL_FILE_ID,
         payload: { id },
     }),
     setShowRenameChatModalForId: (chatId: string | null): Action => ({

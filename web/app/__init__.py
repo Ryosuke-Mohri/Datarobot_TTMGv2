@@ -28,7 +28,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from app.api import router as api_router
 from app.config import Config
 from app.deps import Deps, create_deps
-from core.telemetry.logging import init_logging
+from core.telemetry import configure_uvicorn_logging, init_logging
 
 base_router = APIRouter()
 
@@ -100,6 +100,11 @@ def create_app(
         config = Config()
     init_logging(level=config.log_level, format_type=config.log_format)
 
+    # Configure uvicorn logging with health check filtering and custom formatting
+    configure_uvicorn_logging(
+        log_format=config.log_format, log_level=config.log_level.value
+    )
+
     logger.info("App is starting up.")
     logger.debug("Config loaded", extra={"config": config.model_dump()})
 
@@ -134,6 +139,7 @@ def create_app(
         secret_key=config.session_secret_key,
         max_age=config.session_max_age,
         https_only=config.session_https_only,
+        path=app_base_url,
     )
 
     app.include_router(base_router)

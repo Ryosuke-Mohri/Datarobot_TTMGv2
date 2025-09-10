@@ -69,6 +69,16 @@ class MessageCreate(SQLModel):
     content: str
     components: str
     error: str | None
+    in_progress: bool
+
+
+class MessageUpdate(SQLModel):
+    """Schema for updating an existing message. All fields optional."""
+
+    content: str | None = Field(default="")
+    components: str | None = Field(default="")
+    error: str | None = Field(default=None)
+    in_progress: bool | None = Field(default=False)
 
 
 class MessageRepository:
@@ -94,6 +104,30 @@ class MessageRepository:
             except IntegrityError:
                 await session.rollback()
                 raise ValueError(f"Chat with ID {message_data.chat_id} does not exist")
+            await session.refresh(message)
+            return message
+
+    async def update_message(
+        self,
+        uuid: uuidpkg.UUID,
+        update: "MessageUpdate",
+    ) -> Message | None:
+        """Update a knowledge base (must be owned by the user)."""
+        async with self._db.session() as session:
+            query = await session.exec(
+                select(Message).where(
+                    Message.uuid == uuid,
+                )
+            )
+            message = query.first()
+            if not message:
+                return None
+
+            for field, value in update.model_dump(exclude_unset=True).items():
+                if value is not None:
+                    setattr(message, field, value)
+
+            await session.commit()
             await session.refresh(message)
             return message
 

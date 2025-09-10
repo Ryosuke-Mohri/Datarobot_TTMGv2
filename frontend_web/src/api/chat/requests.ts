@@ -3,13 +3,36 @@ import { DRApiResponse } from '@/api/types.ts';
 
 import apiClient from '../apiClient';
 import { IPostMessageParams, IChat, IChatMessage } from './types';
-import { AGENT_MODEL } from './constants';
 
 const BASE_URL = '/v1/chat';
-const llmAPIUrl = `${BASE_URL}/completions`;
 const llmCatalogUrl = `${BASE_URL}/llm/catalog`;
 const chatListUrl = `${BASE_URL}`;
-const agentChatUrl = `${BASE_URL}/agent/completions`;
+
+export async function startNewChat({
+    message,
+    model,
+    knowledgeBase,
+    knowledgeBaseId,
+    fileIds,
+    signal,
+}: IPostMessageParams): Promise<IChat> {
+    const payload = {
+        message: message,
+        model: model,
+        // Send knowledge base ID if provided, otherwise fall back to full knowledge base object for backward compatibility
+        ...(knowledgeBaseId
+            ? { knowledge_base_id: knowledgeBaseId }
+            : knowledgeBase && { knowledge_base: knowledgeBase }),
+        ...(fileIds && fileIds.length > 0 && { file_ids: fileIds }),
+    };
+
+    // To try the agents, change to: `/v1/chat/agent/completions`
+    const { data } = await apiClient.post<IChat>(BASE_URL, payload, {
+        signal,
+    });
+
+    return data;
+}
 
 export async function postMessage({
     message,
@@ -19,7 +42,7 @@ export async function postMessage({
     knowledgeBaseId,
     fileIds,
     signal,
-}: IPostMessageParams): Promise<IChatMessage> {
+}: IPostMessageParams): Promise<IChatMessage[]> {
     const payload = {
         message: message,
         model: model,
@@ -31,13 +54,14 @@ export async function postMessage({
         ...(fileIds && fileIds.length > 0 && { file_ids: fileIds }),
     };
 
-    // If the model is the agent model, use the agent chat URL
-    const apiUrl = model === AGENT_MODEL ? agentChatUrl : llmAPIUrl;
-
     // To try the agents, change to: `/v1/chat/agent/completions`
-    const { data } = await apiClient.post<IChatMessage>(apiUrl, payload, {
-        signal,
-    });
+    const { data } = await apiClient.post<IChatMessage[]>(
+        `${BASE_URL}/${chatId}/messages`,
+        payload,
+        {
+            signal,
+        }
+    );
 
     return data;
 }

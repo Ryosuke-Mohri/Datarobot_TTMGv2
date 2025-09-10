@@ -14,33 +14,25 @@
 import json
 import logging
 import uuid as uuidpkg
-from functools import lru_cache
-from typing import TYPE_CHECKING, Any
+from contextlib import asynccontextmanager
+from typing import TYPE_CHECKING, Any, AsyncIterator, Callable, Coroutine, List
 
 import datarobot as dr
+import litellm
 from datarobot.auth.session import AuthCtx
 from datarobot.auth.typing import Metadata
-from datarobot.client import RESTClientObject
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from fastapi.responses import JSONResponse
-from openai import AsyncOpenAI
-from openai.types.chat.chat_completion_message_param import ChatCompletionMessageParam
-from openai.types.chat.chat_completion_system_message_param import (
-    ChatCompletionSystemMessageParam,
-)
-from openai.types.chat.chat_completion_user_message_param import (
-    ChatCompletionUserMessageParam,
-)
-from pydantic import ValidationError
 from sqlalchemy.exc import NoResultFound
 
 from app.api.v1.knowledge_bases import (
     get_knowledge_base_schema,
 )
 from app.auth.ctx import must_get_auth_ctx
+from app.chats import Chat, ChatCreate, ChatRepository
+from app.config import Config
 from app.files.contents import get_or_create_encoded_content
-from app.models.chats import Chat, ChatCreate, ChatRepository
-from app.models.messages import Message, MessageCreate, MessageRepository, Role
+from app.messages import Message, MessageCreate, MessageRepository, MessageUpdate, Role
 from core import getenv
 
 if TYPE_CHECKING:
@@ -49,11 +41,11 @@ if TYPE_CHECKING:
     from app.users.user import User, UserRepository
 
 logger = logging.getLogger(__name__)
-
 chat_router = APIRouter(tags=["Chat"])
 
 agent_deployment_url = getenv("AGENT_DEPLOYMENT_URL") or ""
 agent_deployment_token = getenv("AGENT_DEPLOYMENT_TOKEN") or "dummy"
+AGENT_MODEL_NAME = "ttmdocs-agents"
 
 
 SYSTEM_PROMPT = (
@@ -64,20 +56,13 @@ SYSTEM_PROMPT = (
 )
 
 
-@lru_cache(maxsize=128)
-def initialize_deployment(deployment_id: str) -> tuple[RESTClientObject, str]:
-    try:
-        dr_client = dr.Client()
-
-        deployment_chat_base_url = dr_client.endpoint + f"/deployments/{deployment_id}/"
-        return dr_client, deployment_chat_base_url
-    except ValidationError as e:
-        raise ValueError(
-            "Unable to load Deployment ID."
-            "If running locally, verify you have selected the correct "
-            "stack and that it is active using `pulumi stack output`. "
-            "If running in DataRobot, verify your runtime parameters have been set correctly."
-        ) from e
+def _normalize_model_id(raw_model: str) -> str:
+    """
+    Add datarobot as a provider and handle any other provider string fixes for
+    litellm
+    """
+    # fallback to datarobot provider
+    return f"datarobot/{raw_model}"
 
 
 async def _get_current_user(user_repo: "UserRepository", user_id: int) -> "User":
@@ -87,7 +72,7 @@ async def _get_current_user(user_repo: "UserRepository", user_id: int) -> "User"
     return current_user
 
 
-async def augment_message_with_files(
+async def _augment_message_with_files(
     message: str,
     files: "list[File]",
     file_repo: "FileRepository",
@@ -128,7 +113,7 @@ async def augment_message_with_files(
 
 
 def _format_chat(chat: Chat, message: Message | None) -> dict[str, Any]:
-    data = chat.dump_json_compatible()
+    data: dict[str, Any] = chat.dump_json_compatible()
     if message:
         message_data = message.dump_json_compatible()
         data["updated_at"] = message_data["created_at"]
@@ -179,6 +164,8 @@ async def _get_files(
     file_ids_str: list[str],
     file_repo: "FileRepository",
 ) -> list["File"]:
+    if not file_ids_str:
+        return []
     # Validate and convert file IDs
     file_ids = []
     for file_id_str in file_ids_str:
@@ -218,10 +205,82 @@ async def _get_knowledge_base(
     return knowledge_base_obj
 
 
-@chat_router.post("/chat/completions")
-async def chat_completion(
-    request: Request, auth_ctx: AuthCtx[Metadata] = Depends(must_get_auth_ctx)
-) -> Any:
+async def _create_new_message_exchange(
+    message_repo: MessageRepository,
+    chat_id: uuidpkg.UUID,
+    model: str,
+    user_message: str,
+) -> List[Message]:
+    prompt_message = await message_repo.create_message(
+        MessageCreate(
+            chat_id=chat_id,
+            role=Role.USER,
+            model=model,
+            content=user_message,
+            components="",
+            error=None,
+            in_progress=False,
+        )
+    )
+
+    response_message = await message_repo.create_message(
+        MessageCreate(
+            chat_id=chat_id,
+            role=Role.ASSISTANT,
+            model=model,
+            in_progress=True,
+            content="",
+            components="",
+            error=None,
+        )
+    )
+
+    return [prompt_message, response_message]
+
+
+@asynccontextmanager
+async def _update_message_on_exception(
+    request: Request, message_uuid: uuidpkg.UUID
+) -> AsyncIterator[None]:
+    """
+    Context manager for running a chat completions safely
+    - Catches exceptions raised inside the block
+    - Logs the error
+    - Updates DB or request state if needed
+    """
+    try:
+        yield
+    except Exception as e:
+        logger.error(f"{type(e).__name__} occurred %s", str(e))
+        message_repo: MessageRepository = request.app.state.deps.message_repo
+        update_model = MessageUpdate(in_progress=False, error=str(e))
+        await message_repo.update_message(
+            uuid=message_uuid,
+            update=update_model,
+        )
+
+
+def _get_safe_completion_task(
+    model: str,
+    request: Request,
+    message_uuid: uuidpkg.UUID,
+    auth_ctx: AuthCtx[Metadata] = Depends(must_get_auth_ctx),
+) -> Callable[[], Coroutine[Any, Any, None]]:
+    async def task() -> None:
+        async with _update_message_on_exception(request, message_uuid):
+            if model == AGENT_MODEL_NAME:
+                await _send_chat_agent_completion(request, message_uuid, auth_ctx)
+            else:
+                await _send_chat_completion(request, message_uuid, auth_ctx)
+
+    return task
+
+
+async def _send_chat_completion(
+    request: Request,
+    message_uuid: uuidpkg.UUID,
+    auth_ctx: AuthCtx[Metadata] = Depends(must_get_auth_ctx),
+) -> None:
     # Get current user's UUID
     current_user = await _get_current_user(
         request.app.state.deps.user_repo, int(auth_ctx.user.id)
@@ -231,7 +290,6 @@ async def chat_completion(
     message = request_data["message"]
     model = request_data["model"]
     file_ids_str = request_data.get("file_ids", [])
-    chat_id = request_data.get("chat_id")
     knowledge_base_uuid_str = request_data.get("knowledge_base_id")
 
     # Get repositories
@@ -255,35 +313,12 @@ async def chat_completion(
     # Combine both sets of files
     combined_files = files + knowledge_base_files
 
-    chat_repo: ChatRepository = request.app.state.deps.chat_repo
     message_repo: MessageRepository = request.app.state.deps.message_repo
 
-    # Get the correct chat
-    chat_uuid, _ = await _get_or_create_chat_id(chat_repo, chat_id, current_user)
-    await message_repo.create_message(
-        MessageCreate(
-            chat_id=chat_uuid,
-            role=Role.USER,
-            model=model,
-            content=message,
-            components="",
-            error=None,
-        )
-    )
-
-    dr_client, deployment_chat_base_url = initialize_deployment(
-        request.app.state.deps.config.llm_deployment_id
-    )
-    openai_client = AsyncOpenAI(
-        api_key=dr_client.token,
-        base_url=deployment_chat_base_url,
-        timeout=90,
-        max_retries=2,
-    )
     # Augment the message with file content if they exist
     augmented_message = message
     if combined_files:
-        augmented_message = await augment_message_with_files(
+        augmented_message = await _augment_message_with_files(
             message,
             files=combined_files,
             file_repo=file_repo,
@@ -292,34 +327,36 @@ async def chat_completion(
         )
 
     # Create OpenAI messages
-    messages: list[ChatCompletionMessageParam] = [
-        ChatCompletionSystemMessageParam(role="system", content=SYSTEM_PROMPT),
-        ChatCompletionUserMessageParam(role="user", content=augmented_message),
+    messages: list[dict[str, str]] = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": augmented_message},
     ]
 
-    async with openai_client as client:
-        completion = await client.chat.completions.create(
-            model=model,
-            messages=messages,
-        )
-    llm_message_content = completion.choices[0].message.content
-    response_message = await message_repo.create_message(
-        MessageCreate(
-            chat_id=chat_uuid,
-            role=Role.ASSISTANT,
-            model=model,
-            content=llm_message_content or "",
-            components="",
-            error=None,
-        )
+    config: Config = request.app.state.deps.config
+    logger.debug("Sending messages to LLM:\n%s", json.dumps(messages, indent=2))
+
+    completion = await litellm.acompletion(
+        messages=messages,
+        model=_normalize_model_id(model),
+        api_base=(
+            f"{config.datarobot_endpoint.rstrip('/')}/deployments/"
+            f"{config.llm_deployment_id}/chat/completions"
+        ),
     )
-    return JSONResponse(content=response_message.dump_json_compatible())
+    # Extract message content from LiteLLM response
+    llm_message_content = completion["choices"][0]["message"]["content"] or ""
+    update_model = MessageUpdate(content=llm_message_content, in_progress=False)
+    await message_repo.update_message(
+        uuid=message_uuid,
+        update=update_model,
+    )
 
 
-@chat_router.post("/chat/agent/completions")
-async def chat_agent_completion(
-    request: Request, auth_ctx: AuthCtx[Metadata] = Depends(must_get_auth_ctx)
-) -> Any:
+async def _send_chat_agent_completion(
+    request: Request,
+    message_uuid: uuidpkg.UUID,
+    auth_ctx: AuthCtx[Metadata] = Depends(must_get_auth_ctx),
+) -> None:
     # Get current user's UUID
     current_user = await _get_current_user(
         request.app.state.deps.user_repo, int(auth_ctx.user.id)
@@ -327,11 +364,10 @@ async def chat_agent_completion(
 
     request_data = await request.json()
     message = request_data["message"]
-    llm_model = request_data.get("model", "ttmdocs-agents")
+    llm_model = request_data.get("model", AGENT_MODEL_NAME)
     knowledge_base_uuid_str = request_data.get("knowledge_base_id")
     file_ids_str = request_data.get("file_ids", [])
 
-    chat_repo: ChatRepository = request.app.state.deps.chat_repo
     message_repo: MessageRepository = request.app.state.deps.message_repo
     file_repo: FileRepository = request.app.state.deps.file_repo
     knowledge_base_repo: KnowledgeBaseRepository = (
@@ -364,37 +400,10 @@ async def chat_agent_completion(
                 knowledge_base.uuid,
             )
 
-    chat_id, _ = await _get_or_create_chat_id(
-        chat_repo, request_data.get("chat_id"), current_user
-    )
-    await message_repo.create_message(
-        MessageCreate(
-            chat_id=chat_id,
-            role=Role.USER,
-            model=llm_model,
-            content=message,
-            components="",
-            error=None,
-        )
-    )
-    if agent_deployment_url:
-        # If the agent deployment URL is provided, use it directly
-        deployment_chat_base_url = agent_deployment_url
-        token = agent_deployment_token
-    else:
-        dr_client, deployment_chat_base_url = initialize_deployment(
-            request.app.state.deps.config.agent_retrieval_agent_deployment_id
-        )
-        token = dr_client.token
-    openai_client = AsyncOpenAI(
-        api_key=token,
-        base_url=deployment_chat_base_url,
-        timeout=90,
-        max_retries=2,
-    )
+    # URL/token selection now centralized in build_acompletion_args
     augmented_message = message
     if files:
-        augmented_message = await augment_message_with_files(
+        augmented_message = await _augment_message_with_files(
             message,
             files,
             file_repo=file_repo,
@@ -415,37 +424,94 @@ async def chat_agent_completion(
     # Add file content if files are provided
     if files:
         content["question"] = augmented_message
-    messages: list[ChatCompletionMessageParam] = [
-        ChatCompletionUserMessageParam(role="user", content=json.dumps(content)),
+    messages: list[dict[str, str]] = [
+        {"role": "user", "content": json.dumps(content)},
     ]
-    async with openai_client as client:
-        completion = await client.chat.completions.create(
-            model=llm_model,
-            messages=messages,
+
+    config: Config = request.app.state.deps.config
+
+    agent_kwargs: dict[str, Any] = {}
+    if agent_deployment_url:
+        agent_kwargs["api_base"] = agent_deployment_url.rstrip("/")
+        agent_kwargs["api_key"] = agent_deployment_token
+        agent_kwargs["model"] = "openai/chat"  # To allow direct chat completion
+    else:
+        agent_kwargs["api_base"] = (
+            f"{config.datarobot_endpoint.rstrip('/')}/deployments/"
+            f"{config.agent_retrieval_agent_deployment_id}/chat/completions"
         )
-    llm_message_content = completion.choices[0].message.content or ""
-    response_message = await message_repo.create_message(
-        MessageCreate(
-            chat_id=chat_id,
-            role=Role.ASSISTANT,
-            model=llm_model,
-            content=llm_message_content,
-            components="",
-            error=None,
-        )
+        agent_kwargs["model"] = _normalize_model_id(llm_model)
+    logger.debug(
+        "Sending messages to Agent Workflow:\n%s", json.dumps(messages, indent=2)
     )
-    return JSONResponse(content=response_message.dump_json_compatible())
+
+    completion = await litellm.acompletion(messages=messages, **agent_kwargs)
+    # Extract message content from LiteLLM response
+    llm_message_content = completion["choices"][0]["message"]["content"] or ""
+
+    update_model = MessageUpdate(content=llm_message_content, in_progress=False)
+    await message_repo.update_message(
+        uuid=message_uuid,
+        update=update_model,
+    )
 
 
 @chat_router.get("/chat/llm/catalog")
 def get_available_llm_catalog(request: Request) -> Any:
-    dr_client, _ = initialize_deployment(
-        request.app.state.deps.config.llm_deployment_id
-    )
-
+    config: Config = request.app.state.deps.config
+    if not config.use_datarobot_llm_gateway:
+        return {
+            "totalCount": 1,
+            "count": 1,
+            "next": None,
+            "previous": None,
+            "data": [
+                {
+                    "name": config.llm_default_model_friendly_name,
+                    "model": config.llm_default_model,
+                    "llmId": config.llm_default_model,
+                    "isActive": True,
+                    "isDeprecated": False,
+                }
+            ],
+        }
+    dr_client = dr.Client()
     response = dr_client.get("genai/llmgw/catalog/")
     data = response.json()
     return JSONResponse(content=data)
+
+
+@chat_router.post("/chat")
+async def create_chat(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    auth_ctx: AuthCtx[Metadata] = Depends(must_get_auth_ctx),
+) -> Chat:
+    """Create a new chat, trigger the chat completion and return the UUID of the new chat"""
+    # Get current user's UUID
+    current_user = await _get_current_user(
+        request.app.state.deps.user_repo, int(auth_ctx.user.id)
+    )
+
+    request_data = await request.json()
+    message = request_data["message"]
+    model = request_data["model"]
+
+    chat_repo = request.app.state.deps.chat_repo
+    message_repo = request.app.state.deps.message_repo
+    new_chat: Chat = await chat_repo.create_chat(
+        ChatCreate(name="New Chat", user_uuid=current_user.uuid)
+    )
+
+    [_, response_message] = await _create_new_message_exchange(
+        message_repo, new_chat.uuid, model, message
+    )
+    chat_completion_task = _get_safe_completion_task(
+        model, request, response_message.uuid, auth_ctx
+    )
+    background_tasks.add_task(chat_completion_task)
+
+    return new_chat
 
 
 @chat_router.get("/chat")
@@ -519,6 +585,37 @@ async def delete_chat(request: Request, chat_uuid: uuidpkg.UUID) -> Any:
             status_code=status.HTTP_404_NOT_FOUND, detail="chat not found"
         )
     return JSONResponse(content=chat.dump_json_compatible())
+
+
+@chat_router.post("/chat/{chat_uuid}/messages")
+async def create_chat_messages(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    chat_uuid: uuidpkg.UUID,
+    auth_ctx: AuthCtx[Metadata] = Depends(must_get_auth_ctx),
+) -> List[Message]:
+    """Create a new message in an existing chat, trigger the chat completion and return the 'in progresss' message"""
+    request_data = await request.json()
+    message = request_data["message"]
+    model = request_data["model"]
+
+    chat_repo = request.app.state.deps.chat_repo
+    message_repo = request.app.state.deps.message_repo
+
+    # Check if chat exists
+    chat = await chat_repo.get_chat(chat_uuid)
+    if not chat:
+        raise HTTPException(status_code=404, detail="Chat not found")
+
+    [prompt_message, response_message] = await _create_new_message_exchange(
+        message_repo, chat.uuid, model, message
+    )
+    chat_completion_task = _get_safe_completion_task(
+        model, request, response_message.uuid, auth_ctx
+    )
+    background_tasks.add_task(chat_completion_task)
+
+    return [prompt_message, response_message]
 
 
 @chat_router.get("/chat/{chat_uuid}/messages")

@@ -33,7 +33,7 @@ describe('Application', () => {
         expect(chatPromptInput).toBeInTheDocument();
     });
 
-    it('changes selected model via app state context', async () => {
+    it('displays the current selected model', async () => {
         renderWithProviders(<App />, {
             selectedLlmModel: DEFAULT_LLM_CATALOG[0],
             availableLlmModels: DEFAULT_LLM_CATALOG,
@@ -49,15 +49,17 @@ describe('Application', () => {
 
         await userEvent.click(modelSelectorTrigger);
 
-        // const modelSelectorMenuContent = screen.getByTestId('dropdown-model-selector-menu-content');
-        const gpt4oItem = await screen.findByTestId(
-            'dropdown-model-selector-item-azure-openai-gpt-4-o'
+        // Verify the current model appears in the dropdown
+        const agentModelItem = await screen.findByTestId(
+            'dropdown-model-selector-item-ttmdocs-agents'
         );
-        expect(gpt4oItem).toBeVisible();
-        await userEvent.click(gpt4oItem);
-        expect(modelSelectorTrigger).toHaveTextContent('Azure OpenAI GPT-4o');
+        expect(agentModelItem).toBeVisible();
+        expect(agentModelItem).toHaveTextContent('🧠 Intelligent Agent Crew');
 
-        expect(modelName).toHaveTextContent('Azure OpenAI GPT-4o');
+        // Click the same model (since it's the only one available)
+        await userEvent.click(agentModelItem);
+        expect(modelSelectorTrigger).toHaveTextContent('🧠 Intelligent Agent Crew');
+        expect(modelName).toHaveTextContent('🧠 Intelligent Agent Crew');
     });
 
     it('modal dropdown should be hidden for on knowledge bases page', async () => {

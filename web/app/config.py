@@ -23,6 +23,9 @@ class Config(DataRobotAppFrameworkBaseSettings):
     datarobot_api_token: str
 
     llm_deployment_id: str
+    use_datarobot_llm_gateway: bool = False
+    llm_default_model: str = "custom-model"
+    llm_default_model_friendly_name: str = "DataRobot LLM Blueprint"
     agent_retrieval_agent_deployment_id: str = ""
 
     oauth_impl: OAuthImpl = OAuthImpl.DATAROBOT
@@ -50,4 +53,4 @@ class Config(DataRobotAppFrameworkBaseSettings):
     storage_path: str = ".data/storage"
 
     log_level: LogLevel = LogLevel.INFO
-    log_format: FormatType = "json"
+    log_format: FormatType = "text"

@@ -14,13 +14,17 @@
 import uuid as uuidpkg
 from datetime import datetime, timedelta, timezone
 from enum import Enum
+from typing import Final
 
 from datarobot.auth.identity import Identity as IdentityData
 from sqlalchemy import Column, DateTime
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Field, Relationship, SQLModel, select
 
 from app.db import DBCtx
 from app.users.user import User
+
+UPSERT_RETRIES: Final = 3
 
 
 class AuthSchema(str, Enum):
@@ -227,83 +231,55 @@ class IdentityRepository:
         Note: provider_user_id has a unique constraint, so the same email
         can only exist once in the database, regardless of provider.
         """
-        from sqlalchemy.exc import IntegrityError
+        provider_id_str = provider_id
+        provider_type_str = provider_type
 
-        async with self._db.session() as sess:
-            # First, try to find existing identity by provider_user_id only
-            # since that's what has the unique constraint
-            query = await sess.exec(
-                select(Identity).where(Identity.provider_user_id == provider_user_id)
-            )
-            identity = query.first()
-
-            # Create if doesn't exist
-            if not identity:
-                identity = Identity(
-                    type=auth_type,
-                    user_id=user_id,
-                    provider_id=provider_id,
-                    provider_type=provider_type,
-                    provider_user_id=provider_user_id,
-                    provider_identity_id=None,
-                    access_token=None,
-                    access_token_expires_at=None,
-                    refresh_token=None,
-                    datarobot_org_id=None,
-                    datarobot_tenant_id=None,
-                )
-            else:
-                # Update existing identity with new provider information
-                identity.type = auth_type
-                identity.user_id = user_id
-                identity.provider_id = provider_id
-                identity.provider_type = provider_type
-
-            # Apply additional updates if provided
-            if update:
-                for field, value in update.model_dump(exclude_unset=True).items():
-                    if value is not None:
-                        setattr(identity, field, value)
-
-            sess.add(identity)
-
-            try:
-                await sess.commit()
-                await sess.refresh(identity)
-                return identity
-            except IntegrityError:
-                # Race condition: someone else created it between our check and insert
-                await sess.rollback()
-
-                # Try one more time to find the existing record
-                retry_query = await sess.exec(
+        attempt = 0
+        while True:
+            attempt += 1
+            async with self._db.session() as sess:
+                query = await sess.exec(
                     select(Identity).where(
                         Identity.provider_user_id == provider_user_id
                     )
                 )
-                identity = retry_query.first()
+                identity = query.first()
 
-                if identity:
-                    # Update the existing record we found
+                if identity is None:
+                    identity = Identity(
+                        type=auth_type,
+                        user_id=user_id,
+                        provider_id=provider_id_str,
+                        provider_type=provider_type_str,
+                        provider_user_id=provider_user_id,
+                        provider_identity_id=None,
+                        access_token=None,
+                        access_token_expires_at=None,
+                        refresh_token=None,
+                        datarobot_org_id=None,
+                        datarobot_tenant_id=None,
+                    )
+                else:
                     identity.type = auth_type
                     identity.user_id = user_id
-                    identity.provider_id = provider_id
-                    identity.provider_type = provider_type
+                    identity.provider_id = provider_id_str
+                    identity.provider_type = provider_type_str
 
-                    if update:
-                        for field, value in update.model_dump(
-                            exclude_unset=True
-                        ).items():
-                            if value is not None:
-                                setattr(identity, field, value)
+                if update:
+                    for field, value in update.model_dump(exclude_unset=True).items():
+                        if value is not None:
+                            setattr(identity, field, value)
 
-                    sess.add(identity)
+                sess.add(identity)
+                try:
+                    await sess.flush()
                     await sess.commit()
-                    await sess.refresh(identity)
                     return identity
-                else:
-                    # This shouldn't happen, but re-raise if it does
-                    raise
+                except IntegrityError:
+                    await sess.rollback()
+                    if attempt >= UPSERT_RETRIES:
+                        raise
+                    continue
 
     async def update_identity(
         self, identity_id: int, update: IdentityUpdate

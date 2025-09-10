@@ -6,3 +6,9 @@ runtimeParameterDefinitions:
   - fieldName: LLM_DEPLOYMENT_ID
     defaultValue: SET_VIA_PULUMI_OR_MANUALLY
     type: string
+  - fieldName: LLM_DEFAULT_MODEL
+    defaultValue: SET_VIA_PULUMI_OR_MANUALLY
+    type: string
+  - fieldName: LLM_USE_DATAROBOT_LLM_GATEWAY
+    defaultValue: SET_VIA_PULUMI_OR_MANUALLY
+    type: string

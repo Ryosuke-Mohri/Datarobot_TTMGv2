@@ -1,6 +1,6 @@
 # Talk to My Docs
 
-A modular,application template for building, developing, and deploying an AI-powered applications with multi-agent orchestration, modern web frontends, and robust infrastructure-as-code to dynamically talk to your documents across different providers such as Google Drive, Box, and your local computer.
+A modular, application template for building, developing, and deploying an AI-powered applications with multi-agent orchestration, modern web frontends, and robust infrastructure-as-code to dynamically talk to your documents across different providers such as Google Drive, Box, and your local computer.
 
 > **Warning**
 > This template is a starting point. You must adapt it for your business requirements before deploying to production.
@@ -13,9 +13,12 @@ A modular,application template for building, developing, and deploying an AI-pow
 2. [Architecture Overview](#architecture-overview)
 3. [Development Workflow](#development-workflow)
 4. [Deployment](#deployment)
-5. [Subproject Documentation](#subproject-documentation)
-6. [Advanced Usage](#advanced-usage)
-7. [Additional Resources](#additional-resources)
+5. [Change the LLM](#change-the-llm)
+6. [Web Configuration](#web-configuration)
+7. [OAuth Applications](#oauth-applications)
+8. [Subproject Documentation](#subproject-documentation)
+9. [Advanced Usage](#advanced-usage)
+10. [Additional Resources](#additional-resources)
 
 ---
 
@@ -29,18 +32,17 @@ If you are using DataRobot Codespaces, this is already complete for you. If not,
 - [uv](https://docs.astral.sh/uv/getting-started/installation/) (Python package manager)
 - [Pulumi](https://www.pulumi.com/docs/iac/download-install/) (infrastructure as code)
 
+
 #### Example Installation Commands
 
 For the latest and most accurate installation instructions for your platform, visit:
+* https://taskfile.dev/installation/
+* https://www.pulumi.com/docs/iac/download-install/
+* https://docs.astral.sh/uv/getting-started/installation/
 
-- https://taskfile.dev/installation/
-- https://www.pulumi.com/docs/iac/download-install/
-- https://docs.astral.sh/uv/getting-started/installation/
-
-We provide the instructions below to save you a context flip, but you're system may not meet the common expectations from these shortcut scripts:
+We provide the instructions below to save you a context flip, but your system may not meet the common expectations from these shortcut scripts:
 
 **macOS:**
-
 ```sh
 brew install go-task/tap/go-task
 brew install uv
@@ -48,7 +50,6 @@ brew install pulumi/tap/pulumi
 ```
 
 **Linux (Debian/Ubuntu/DataRobot Codespaces):**
-
 ```sh
 # Taskfile.dev
 sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -d -b ~/.local/bin
@@ -59,7 +60,6 @@ curl -fsSL https://get.pulumi.com | sh
 ```
 
 **Windows (PowerShell):**
-
 ```powershell
 # Taskfile.dev
 winget install --id=GoTask.GoTask -e
@@ -70,11 +70,25 @@ winget install pulumi
 winget upgrade pulumi
 ```
 
+### Pulumi Login
+
+Pulumi requires a location to store the state of the application template. The easiest option is to
+run:
+
+```
+pulumi login --local
+```
+
+We recommend using a shared backend like Ceph, Minio, S3, or Azure Blob Storage. See
+[Managing Pulumi State and Backends](https://www.pulumi.com/docs/iac/concepts/state-and-backends/) for
+more details. For production CI/CD information see our comprehensive
+[CI/CD Guide for Application Templates](https://docs.datarobot.com/en/docs/workbench/wb-apps/app-templates/pulumi-tasks/cicd-tutorial.html)
+
 ### Clone the Repository
 
 ```sh
 git clone https://github.com/datarobot-community/talk-to-my-docs-agents
-cd talk-to-my-docs-agent
+cd talk-to-my-docs-agents
 ```
 
 ### Environment Setup
@@ -82,7 +96,7 @@ cd talk-to-my-docs-agent
 Copy the sample environment file and fill in your credentials:
 
 ```sh
-cp .env.template .env
+cp .env.sample .env
 # Edit .env with your API keys and secrets
 ```
 
@@ -90,13 +104,11 @@ The `task` commands will automatically read the `.env` file directly to ensure e
 If you need to source those variables directly into your shell you can:
 
 **Linux/macOS:**
-
 ```sh
 set -a && source .env && set +a
 ```
 
 **Windows (PowerShell):**
-
 ```powershell
 Get-Content .env | ForEach-Object {
 	if ($_ -match '^\s*([^#][^=]*)=(.*)$') {
@@ -156,12 +168,14 @@ Each component can be developed and deployed independently or as part of the ful
 
 All subprojects use [Taskfile.dev](https://taskfile.dev/#/installation) for common tasks. See each subproject’s README for details.
 
+
 ### Common Tasks
 
 The project uses [Taskfile.dev](https://taskfile.dev/#/) to manage common development tasks. Here are the most frequently used commands:
 
 - `task install-all`: Installs all dependencies for every subproject.
 - `task dev-all`: Starts all development servers and processes.
+
 
 ### Getting Started
 
@@ -205,7 +219,7 @@ task web:dev-agent
 Running the Web backend with a deployed Agent:
 
 ```sh
-task web:deb
+task web:dev
 ```
 
 ---
@@ -230,35 +244,71 @@ uv run pulumi up
 There are also several shortcut tasks in that `task infra:` component such as only
 deploying the backing LLM, getting stack info, or changing your stack if you have multiple stacks.
 
-### Codespace Specifics
+---
 
-Our codespaces use all the same commands as we have above, but since you're developing on the remote
-DataRobot installation, you'll need to do a bit of port forwarding. Specifically, these servers talk
-to each on the codespace localhost, but to access the Web frontend you'll need to open up the VITE
-development server port `5173`
+## Change the LLM
 
-![alt text](_docs/static/img/image.png)
+Talk to My Docs supports multiple flexible LLM options including:
+- LLM Blueprint with LLM Gateway (default)
+- LLM Blueprint with an External LLM
+- Registered model such as an NVIDIA NIM
+- Already Deployed Text Generation model in DataRobot
 
-If you want to expose all three development servers to make direct API calls to the agent or Web server, you'll need to additionally expose port `8080` (Web) and `8842`. Additionally, you'll need
-to start those development servers manually rather than through our Taskfile as the default secure
-configuration runs only on the localhost port. To do so, the manual commands would are
-
-for the agent:
-
+### LLM Configuration Recommended Option
+You can edit the LLM configuration by manually changing which configuration is active.
+Simply run:
 ```sh
-cd agent_retrieval_agent
-uv run drum server -cd custom_model --address 0.0.0.0:8842 --target-type agenticworkflow
+ln -sf ../configurations/<chosen_configuration> infra/infra/llm.py
 ```
 
-and for the Web server:
+After doing so, you'll likely want to edit the llm.py to have the correct model selected. Particularly
+for non-LLM Gateway options.
 
+### LLM Configuration Alternative Option
+If you want to do it dynamically, you can set it as a configuration value with:
+```sh
+INFRA_ENABLE_LLM=<chosen_configuration>
 ```
-cd web
-AGENT_DEPLOYMENT_URL=http://localhost:8842\
-TEST_USER_EMAIL="developer@example.com"\
-TEST_USER_API_KEY: "$DATAROBOT_API_TOKEN"\
-uv run fastapi dev --port 8080 --host 0.0.0.0
+from the list of options in the `infra/configurations/llm` folder.
+
+Here are some examples of each configuration using the dynamic option described above:
+
+#### LLM Blueprint with LLM Gateway (default)
+Default option is LLM Blueprint with LLM Gateway if not specified in your `.env` file.
+```sh
+INFRA_ENABLE_LLM=blueprint_with_llm_gateway.py
 ```
+
+#### Existing LLM Deployment in DataRobot
+Uncomment and configure these in your `.env` file:
+```sh
+TEXTGEN_DEPLOYMENT_ID=<your_deployment_id>
+INFRA_ENABLE_LLM=deployed_llm.py
+```
+
+#### Registered Model with LLM Blueprint
+Like an NVIDIA NIM. This also shows how you can adjust the timeout in case getting a GPU takes a long time:
+```sh
+DATAROBOT_TIMEOUT_MINUTES=120
+TEXTGEN_REGISTERED_MODEL_ID='<Your Registered Model ID>'
+INFRA_ENABLE_LLM=registered_model.py
+```
+
+#### External LLM Provider
+Configure an LLM with an external LLM provider like Azure, Bedrock, Anthropic, or VertexAI. Here's an Azure AI example:
+```sh
+INFRA_ENABLE_LLM=blueprint_with_external_llm.py
+LLM_DEFAULT_MODEL="azure/gpt-4o"
+OPENAI_API_VERSION='2024-08-01-preview'
+OPENAI_API_BASE='https://<your_custom_endpoint>.openai.azure.com'
+OPENAI_API_DEPLOYMENT_ID='<your deployment_id>'
+OPENAI_API_KEY='<your_api_key>'
+```
+
+See the [DataRobot documentation](https://docs.datarobot.com/en/docs/gen-ai/playground-tools/deploy-llm.html) for details on other providers.
+
+In addition to the changes for the `.env` file, you can also edit the respective llm.py file to make additional changes
+such as the default LLM, temperature, top_p, etc within the chosen configuration
 
 ---
 
@@ -267,7 +317,7 @@ uv run fastapi dev --port 8080 --host 0.0.0.0
 The Web component is one of the more complex components and requires
 additional configuration such as setting up a SQLAlchemy asyncio
 compatible [database](web/README.md#database-configuration) and [OAuth
-providers]((web/README.md#oauth-applications) to integrate documents
+providers](web/README.md#oauth-applications) to integrate documents
 from third-party document stores
 
 ---
@@ -287,7 +337,7 @@ In order to give it access to those files, you need to configure OAuth Applicati
   - `http://localhost:5173/oauth/callback` - local vite dev server (used by frontend folks)
   - `http://localhost:8080/oauth/callback` - web-proxied frontend
   - `http://localhost:8080/api/v1/oauth/callback/` - the local web API (optional).
-  - For production, you'll want to add your DataRobot callback URL. For example, in US Prod it is `https://app.datarobot.com/custom_applications/{appId}/oauth/callback`. For any installation of DataRobot it is `https://<datarobot-endpoint>/custom_applications/{appId}/oauth/callback`.
+  -  For production, you'll want to add your DataRobot callback URL. For example, in US Prod it is `https://app.datarobot.com/custom_applications/{appId}/oauth/callback`. For any installation of DataRobot it is `https://<datarobot-endpoint>/custom_applications/{appId}/oauth/callback`.
 - Hit the "Create" button when you are done.
 - Copy the "Client ID" and "Client Secret" values from the created OAuth client ID and set them in the template env variables as `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` correspondingly.
 - Make sure you have the "Google Drive API" enabled in the "APIs & Services" > "Library" section. Otherwise, you will get 403 errors.
@@ -307,7 +357,7 @@ In order to give it access to those files, you need to configure OAuth Applicati
   - `http://localhost:5173/oauth/callback` - local vite dev server (used by frontend folks)
   - `http://localhost:8080/oauth/callback` - web-proxied frontend
   - `http://localhost:8080/api/v1/oauth/callback/` - the local web API (optional).
-  - For production, you'll want to add your DataRobot callback URL. For example, in US Prod it is `https://app.datarobot.com/custom_applications/{appId}/oauth/callback`.
+  -  For production, you'll want to add your DataRobot callback URL. For example, in US Prod it is `https://app.datarobot.com/custom_applications/{appId}/oauth/callback`.
 - Hit "Save Changes" after that.
 - Under the "Application Scopes", please make sure you have `Read all files and folders stored in Box` checkbox selected.
 - Finally, under the "OAuth 2.0 Credentials" section, you should be able to find your Client ID and Client Secret pair to setup in the template env variables as `BOX_CLIENT_ID` and `BOX_CLIENT_SECRET` correspondingly.

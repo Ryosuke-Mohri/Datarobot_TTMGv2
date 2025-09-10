@@ -1,4 +1,4 @@
-import { useCallback, useState, useRef, useEffect } from 'react';
+import { useCallback, useState, useRef, useEffect, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 
 import { Textarea } from '@/components/ui/textarea';
@@ -13,7 +13,7 @@ import {
     Plus,
     Info,
 } from 'lucide-react';
-import { usePostMessage } from '@/api/chat/hooks.ts';
+import { useCreateChat, usePostMessage } from '@/api/chat/hooks.ts';
 import { cn } from '@/lib/utils.ts';
 import {
     DropdownMenu,
@@ -27,6 +27,7 @@ import {
     useListKnowledgeBases,
     FileSchema,
     useGetKnowledgeBase,
+    useListFiles,
 } from '@/api/knowledge-bases/hooks';
 import { ConnectedSourcesDialog } from '@/components/custom/connected-sources-dialog';
 import { ExternalFile, useExternalFileUploadMutation } from '@/api/external-files';
@@ -37,24 +38,32 @@ import { ROUTES } from '@/pages/routes.ts';
 
 export function ChatPromptInput({
     classNames,
-    setPendingMessage,
-    isPendingMessage,
+    hasPendingMessage,
 }: {
     classNames?: string;
-    isPendingMessage: boolean;
-    setPendingMessage: (value: boolean) => void;
+    hasPendingMessage: boolean;
 }) {
     const { chatId } = useParams<{ chatId: string }>();
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [message, setMessage] = useState<string>('');
-    const { mutateAsync } = usePostMessage({ chatId });
+    const { mutateAsync: sendMessage, isPending: isSendingMessage } = usePostMessage({ chatId });
+    const { mutateAsync: startChat, isPending: isStartingChat } = useCreateChat();
     const navigate = useNavigate();
-    const { selectedLlmModel, selectedKnowledgeBaseId, setSelectedKnowledgeBaseId } = useAppState();
+    const {
+        selectedLlmModel,
+        selectedKnowledgeBaseId,
+        setSelectedKnowledgeBaseId,
+        selectedExternalFileId,
+        setSelectedExternalFileId,
+    } = useAppState();
     const { data: selectedKnowledgeBase } = useGetKnowledgeBase(
         selectedKnowledgeBaseId ?? undefined
     );
     const { data: bases = [], isFetched: isKnowledgeBasesFetched } = useListKnowledgeBases();
-    const [files, setFiles] = useState<FileSchema[]>();
+    const { data: uploadedFiles = [], isFetched: isUploadedFilesFetched } = useListFiles(
+        selectedKnowledgeBaseId ?? undefined
+    );
+    const [files, setFiles] = useState<FileSchema[]>([]);
     const [isSelectFileActionMenuOpen, setIsSelectFileActionMenuOpen] = useState(false);
     const [isConnectedSourcesOpen, setIsConnectedSourcesOpen] = useState(false);
     const [isComposing, setIsComposing] = useState(false);
@@ -66,7 +75,30 @@ export function ChatPromptInput({
             console.error('Error uploading file:', error);
         },
     });
+    const isPromptPending = useMemo(
+        () => hasPendingMessage || isSendingMessage || isStartingChat,
+        [hasPendingMessage, isSendingMessage, isStartingChat]
+    );
 
+    // Deselect External File when it is no longer found in uploadedFiles
+    useEffect(() => {
+        if (
+            isUploadedFilesFetched &&
+            selectedExternalFileId &&
+            !uploadedFiles.some(file => file.uuid === selectedExternalFileId) &&
+            !files.some(file => file.uuid === selectedExternalFileId)
+        ) {
+            setSelectedExternalFileId(null);
+        }
+    }, [
+        selectedExternalFileId,
+        uploadedFiles,
+        files,
+        isUploadedFilesFetched,
+        setSelectedExternalFileId,
+    ]);
+
+    // Deselect Knowledge Base when it is no longer found
     useEffect(() => {
         if (
             isKnowledgeBasesFetched &&
@@ -77,11 +109,23 @@ export function ChatPromptInput({
         }
     }, [selectedKnowledgeBaseId, bases, isKnowledgeBasesFetched, setSelectedKnowledgeBaseId]);
 
+    useEffect(() => {
+        const selectedFile = uploadedFiles.find(file => file.uuid === selectedExternalFileId);
+        if (selectedFile) {
+            // We currently only support one file
+            setFiles([selectedFile]);
+        }
+    }, [uploadedFiles, selectedExternalFileId]);
+
     const { mutate: mutateExternalFile, isPending: isExternalFileUploading } =
         useExternalFileUploadMutation({
             onSuccess: data => {
                 setFiles(data);
                 setIsConnectedSourcesOpen(false);
+                // We currently only support 1 file selection
+                if (data?.[0]?.uuid) {
+                    setSelectedExternalFileId(data[0].uuid);
+                }
             },
             onError: error => {
                 console.error('Error uploading external file:', error);
@@ -125,7 +169,6 @@ export function ChatPromptInput({
 
     const handleSubmit = useCallback(async () => {
         if (message) {
-            setPendingMessage(true);
             try {
                 // Send file IDs instead of content
                 const context = files?.length
@@ -133,17 +176,24 @@ export function ChatPromptInput({
                     : undefined;
                 // Send only knowledge base ID instead of full knowledge base object
                 const knowledgeBaseId = selectedKnowledgeBaseId ?? undefined;
-                await mutateAsync({
-                    message,
-                    context,
-                    knowledgeBaseId,
-                });
+                if (chatId) {
+                    await sendMessage({
+                        message,
+                        context,
+                        knowledgeBaseId,
+                    });
+                } else {
+                    await startChat({
+                        message,
+                        context,
+                        knowledgeBaseId,
+                    });
+                }
             } finally {
                 setMessage('');
-                setPendingMessage(false);
             }
         }
-    }, [mutateAsync, message, setMessage, setPendingMessage, files, selectedKnowledgeBaseId]);
+    }, [sendMessage, startChat, chatId, message, setMessage, files, selectedKnowledgeBaseId]);
 
     const handleEnterPress = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
         if (e.key === 'Enter' && !e.shiftKey && !isComposing) {
@@ -162,7 +212,7 @@ export function ChatPromptInput({
         <>
             <div
                 className={cn(
-                    isPendingMessage ? 'cursor-wait opacity-70' : '',
+                    isPromptPending ? 'cursor-wait opacity-70' : '',
                     'transition-all',
                     'justify-items-center p-5 w-2xl',
                     classNames
@@ -170,12 +220,12 @@ export function ChatPromptInput({
                 data-testid="chat-prompt-input"
             >
                 <Textarea
-                    disabled={isPendingMessage}
+                    disabled={isPromptPending}
                     onChange={e => setMessage(e.target.value)}
                     placeholder="Ask anything..."
                     value={message}
                     className={cn(
-                        isPendingMessage && 'pointer-events-none',
+                        isPromptPending && 'pointer-events-none',
                         'resize-none rounded-none',
                         'dark:bg-muted border-gray-700'
                     )}
@@ -197,7 +247,7 @@ export function ChatPromptInput({
                                         variant="ghost"
                                         size="icon"
                                         onClick={() => true}
-                                        disabled={isPendingMessage}
+                                        disabled={isPromptPending}
                                     >
                                         <Plus strokeWidth="4" />
                                     </Button>
@@ -295,7 +345,7 @@ export function ChatPromptInput({
                             size="icon"
                             onClick={handleSubmit}
                             data-testid="chat-prompt-input-submit"
-                            disabled={isPendingMessage}
+                            disabled={isPromptPending}
                         >
                             <Send />
                         </Button>
@@ -359,6 +409,7 @@ export function ChatPromptInput({
                                     className="w-4 h-4 cursor-pointer text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity"
                                     onClick={event => {
                                         event.stopPropagation();
+                                        setSelectedExternalFileId(null);
                                         onRemove(index);
                                     }}
                                 />

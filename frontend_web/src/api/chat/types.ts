@@ -1,4 +1,4 @@
-import { KnowledgeBaseSchema } from '../../state/types';
+import { KnowledgeBaseSchema } from '@/api/knowledge-bases/types';
 
 export interface IChatMessage {
     role: 'user' | 'assistant';

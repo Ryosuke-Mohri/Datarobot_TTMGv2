@@ -82,12 +82,16 @@ async def test__get_auth_ctx__existing_user__new_identity(
     req.app.state.deps = db_deps
     req.session = {}
 
-    app_user = await db_deps.user_repo.create_user(UserCreate(email=dr_user.email))
+    app_user = await db_deps.user_repo.create_user(
+        UserCreate(email=dr_user.email, first_name="First", last_name="Last")
+    )
     assert app_user
 
+    assert app_user.id is not None
+    user_id = app_user.id
     dr_user_identity = await db_deps.identity_repo.create_identity(
         IdentityCreate(
-            user_id=app_user.id,
+            user_id=user_id,
             type=AuthSchema.DATAROBOT,
             provider_id=ProviderType.DATAROBOT_USER,
             provider_type=ProviderType.DATAROBOT_USER,
@@ -104,8 +108,8 @@ async def test__get_auth_ctx__existing_user__new_identity(
     assert int(auth_ctx.user.id) == app_user.id
     assert auth_ctx.user.email == dr_user.email
     assert {i.provider_type for i in auth_ctx.identities} == {
-        ProviderType.DATAROBOT_USER,
-        ProviderType.EXTERNAL_EMAIL,
+        ProviderType.DATAROBOT_USER.value,
+        ProviderType.EXTERNAL_EMAIL.value,
     }
 
     identity = await db_deps.identity_repo.get_by_user_id(

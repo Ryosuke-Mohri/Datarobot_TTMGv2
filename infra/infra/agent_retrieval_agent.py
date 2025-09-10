@@ -15,6 +15,7 @@ import os
 import re
 from typing import cast
 
+import datarobot
 import pulumi
 import pulumi_datarobot
 from datarobot_pulumi_utils.pulumi import export
@@ -27,7 +28,14 @@ from datarobot_pulumi_utils.schema.custom_models import (
 from datarobot_pulumi_utils.schema.exec_envs import RuntimeEnvironments
 
 from . import project_dir, use_case
-from .llm import prediction_environment
+
+try:
+    from .llm import prediction_environment
+except ImportError:
+    prediction_environment = pulumi_datarobot.PredictionEnvironment(
+        resource_name=f"Talk to My Docs Prediction Environment [{PROJECT_NAME}]",
+        platform=datarobot.enums.PredictionEnvironmentPlatform.DATAROBOT_SERVERLESS,
+    )
 
 # To use the LLM DataRobot Deployment in your Agent, uncomment the line below
 from .llm import custom_model_runtime_parameters as llm_datarobot_app_runtime_parameters

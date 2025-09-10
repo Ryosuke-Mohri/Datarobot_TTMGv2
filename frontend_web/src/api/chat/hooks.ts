@@ -8,30 +8,20 @@ import {
     getMessages,
     getLlmCatalog,
     postMessage,
+    startNewChat,
 } from './requests';
 import { chatKeys } from './keys';
 import { IChatMessage, IPostMessageContext, IUserMessage, IChat } from './types';
 import { useAppState } from '@/state';
 import { AGENT_MODEL_LLM } from '@/api/chat/constants.ts';
 
-export const usePostMessage = ({ chatId }: { chatId?: string }) => {
+export const useCreateChat = () => {
     const { selectedLlmModel } = useAppState();
     const queryClient = useQueryClient();
     const navigate = useNavigate();
-    return useMutation<IChatMessage, Error, IUserMessage, IPostMessageContext>({
-        mutationFn: ({ message, context, knowledgeBase, knowledgeBaseId }) => {
-            // Handle file IDs if present
-            if (context?.fileIds && context.fileIds.length > 0) {
-                return postMessage({
-                    message: message,
-                    model: selectedLlmModel.model,
-                    chatId: chatId || undefined,
-                    knowledgeBase: knowledgeBase || undefined,
-                    knowledgeBaseId: knowledgeBaseId || undefined,
-                    fileIds: context.fileIds,
-                });
-            }
 
+    return useMutation<IChat, Error, IUserMessage, IPostMessageContext>({
+        mutationFn: ({ message, context, knowledgeBase, knowledgeBaseId }) => {
             // Fallback to legacy pages format for backward compatibility
             const pages = Array.isArray(context?.pages)
                 ? context.pages
@@ -41,33 +31,53 @@ export const usePostMessage = ({ chatId }: { chatId?: string }) => {
                 console.warn('Legacy pages format detected. Consider updating to use fileIds.');
             }
 
+            const fileIds =
+                context?.fileIds && context.fileIds.length > 0 ? context.fileIds : undefined;
+            return startNewChat({
+                message: message,
+                model: selectedLlmModel.model,
+                knowledgeBase: knowledgeBase || undefined,
+                knowledgeBaseId: knowledgeBaseId || undefined,
+                fileIds,
+            });
+        },
+        onError: error => {
+            toast.error(error?.message || 'Failed to send message');
+        },
+        onSuccess: data => {
+            queryClient.invalidateQueries({ queryKey: chatKeys.chatList() });
+            navigate(`/chat/${data.uuid}`);
+        },
+    });
+};
+
+export const usePostMessage = ({ chatId }: { chatId?: string }) => {
+    const { selectedLlmModel } = useAppState();
+    const queryClient = useQueryClient();
+    return useMutation<IChatMessage[], Error, IUserMessage, IPostMessageContext>({
+        mutationFn: ({ message, context, knowledgeBase, knowledgeBaseId }) => {
+            if (!chatId) {
+                throw new Error('chatId is required');
+            }
+            // Fallback to legacy pages format for backward compatibility
+            const pages = Array.isArray(context?.pages)
+                ? context.pages
+                : Object.values(context?.pages || []);
+
+            if (pages.length > 0) {
+                console.warn('Legacy pages format detected. Consider updating to use fileIds.');
+            }
+
+            const fileIds =
+                context?.fileIds && context.fileIds.length > 0 ? context.fileIds : undefined;
             return postMessage({
                 message: message,
                 model: selectedLlmModel.model,
-                chatId: chatId || undefined,
+                chatId,
                 knowledgeBase: knowledgeBase || undefined,
                 knowledgeBaseId: knowledgeBaseId || undefined,
-                fileIds: undefined,
+                fileIds,
             });
-        },
-        onMutate: async data => {
-            const { message } = data;
-            const messagesKey = chatKeys.messages(chatId);
-
-            if (!chatId) {
-                queryClient.setQueryData(messagesKey, []);
-            }
-
-            const previousMessages = queryClient.getQueryData<IChatMessage[]>(messagesKey) || [];
-
-            const newUserMessage: IChatMessage = {
-                role: 'user',
-                content: message,
-                model: selectedLlmModel.model,
-            };
-            queryClient.setQueryData(messagesKey, [...previousMessages, newUserMessage]);
-
-            return { previousMessages, messagesKey };
         },
         onError: (error, _variables, context) => {
             // Restore previous messages
@@ -78,32 +88,35 @@ export const usePostMessage = ({ chatId }: { chatId?: string }) => {
         },
         onSuccess: data => {
             // Set the chat messages data directly in the cache to avoid loading state
-            queryClient.setQueryData<IChatMessage[]>(
-                chatKeys.messages(data.chat_id),
-                (oldData = []) => [...oldData, data]
-            );
+            queryClient.setQueryData<IChatMessage[]>(chatKeys.messages(chatId), (oldData = []) => [
+                ...oldData,
+                ...data,
+            ]);
             queryClient.setQueryData<IChat[]>(chatKeys.chatList(), (oldData = []) => {
                 return oldData.map(chat =>
-                    chat.uuid === data.chat_id
-                        ? ({ ...chat, updated_at: data.created_at } as IChat)
+                    chat.uuid === chatId
+                        ? ({ ...chat, updated_at: data[data.length - 1].created_at } as IChat)
                         : chat
                 );
             });
-            if (!chatId) {
-                queryClient.invalidateQueries({ queryKey: chatKeys.chatList() });
-            }
-            navigate(`/chat/${data.chat_id}`);
         },
     });
 };
 
-export const useChatMessages = (chatId?: string) => {
+export const useChatMessages = ({
+    chatId,
+    shouldRefetch,
+}: {
+    chatId?: string;
+    shouldRefetch?: number;
+}) => {
     return useQuery<IChatMessage[]>({
         queryKey: chatKeys.messages(chatId),
         queryFn: async ({ signal }) => {
             return await getMessages({ chatId: chatId!, signal });
         },
         enabled: !!chatId,
+        refetchInterval: shouldRefetch || false,
     });
 };
 

@@ -22,12 +22,12 @@ from datarobot.auth.oauth import AsyncOAuthComponent
 
 from app.auth.api_key import APIKeyValidator
 from app.auth.oauth import get_oauth
+from app.chats import ChatRepository
 from app.config import Config
 from app.db import DBCtx, create_db_ctx
 from app.files import FileRepository
 from app.knowledge_bases import KnowledgeBaseRepository
-from app.models.chats import ChatRepository
-from app.models.messages import MessageRepository
+from app.messages import MessageRepository
 from app.users.identity import IdentityRepository
 from app.users.tokens import Tokens
 from app.users.user import UserRepository
