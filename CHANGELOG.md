@@ -11,4 +11,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Storing uploaded files in persistent storage. Files will not be lost between container restarts.
 - User sees only own chats.
+- Added support of DB migrations with [Alembic](https://alembic.sqlalchemy.org/en/latest/).
 

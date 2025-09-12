@@ -1,15 +1,17 @@
+import { useState, useEffect, useMemo } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { CheckCircle2 } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
+import { useOauthProviders, useAuthorizeProvider } from '@/api/oauth/hooks';
+import { authKeys, useCurrentUser } from '@/api/auth/hooks';
+import { getBaseUrl } from '@/lib/utils.ts';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { useOauthProviders, useAuthorizeProvider } from '@/api/oauth/hooks';
 import { PATHS } from '@/constants/paths';
-import { useState, useEffect } from 'react';
-import { useCurrentUser } from '@/api/auth/hooks';
-import { CheckCircle2 } from 'lucide-react';
-import { useLocation, useNavigate } from 'react-router-dom';
 import { Skeleton } from '@/components/ui/skeleton';
-import { getBaseUrl } from '@/lib/utils.ts';
 
 export const SettingsSources = () => {
+    const queryClient = useQueryClient();
     const {
         data: providers = [],
         isLoading,
@@ -19,7 +21,12 @@ export const SettingsSources = () => {
     const [connectingId, setConnectingId] = useState<string | null>(null);
     const { data: currentUser } = useCurrentUser();
 
-    const connectedIds = new Set(currentUser?.identities.map(id => id.provider_id) ?? []);
+    const connectedIds = useMemo(() => {
+        if (currentUser?.identities) {
+            return new Set(currentUser.identities.map(id => id.provider_id));
+        }
+    }, [currentUser?.identities]);
+
     let baseUrl = getBaseUrl();
     if (baseUrl.endsWith('/')) {
         baseUrl = baseUrl.slice(0, -1);
@@ -73,7 +80,7 @@ export const SettingsSources = () => {
                                 </p>
                                 {/* placeholder description */}
                             </div>
-                            {connectedIds.has(provider.id) ? (
+                            {connectedIds?.has(provider.id) ? (
                                 <span className="flex items-center gap-1 text-green-500 font-medium">
                                     <CheckCircle2 className="w-4 h-4" /> Connected
                                 </span>
@@ -90,6 +97,9 @@ export const SettingsSources = () => {
                                             },
                                             {
                                                 onSuccess: ({ redirect_url }) => {
+                                                    queryClient.invalidateQueries({
+                                                        queryKey: authKeys.currentUser,
+                                                    });
                                                     window.location.href = redirect_url;
                                                 },
                                                 onError: () => {

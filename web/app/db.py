@@ -11,24 +11,25 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import os
-from contextlib import asynccontextmanager
+from asyncio import Lock
+from contextlib import asynccontextmanager, nullcontext
 from typing import AsyncGenerator, cast
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
-from sqlmodel import SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from core.persistent_fs.dr_file_system import DRFileSystem, calculate_checksum
+from core.persistent_fs.dr_file_system import (
+    DRFileSystem,
+    all_env_variables_present,
+    calculate_checksum,
+)
 
 
 def _prepare_persistence_storage(
     engine: AsyncEngine,
 ) -> tuple[DRFileSystem, str] | tuple[None, None]:
-    # echeck if all env variables are present
-    expected_envs = ["DATAROBOT_ENDPOINT", "DATAROBOT_API_TOKEN", "APPLICATION_ID"]
-    if any(not os.environ.get(env_name) for env_name in expected_envs):
+    if not all_env_variables_present():
         return None, None
 
     if "sqlite" not in engine.url.drivername:
@@ -57,20 +58,25 @@ class DBCtx:
         self._db_path: str | None
         self._persistence_fs, self._db_path = _prepare_persistence_storage(engine)
 
+        self._lock: Lock | nullcontext = nullcontext()  # type: ignore[type-arg]
+        if self._persistence_fs:
+            self._lock = Lock()
+
     @asynccontextmanager
     async def session(self) -> AsyncGenerator[AsyncSession, None]:
-        checksum: bytes | None = None
-        if self._persistence_fs and self._persistence_fs.exists(self._db_path):
-            self._persistence_fs.get(self._db_path, self._db_path)
-            checksum = calculate_checksum(cast(str, self._db_path))
+        async with self._lock:
+            checksum: bytes | None = None
+            if self._persistence_fs and self._persistence_fs.exists(self._db_path):
+                self._persistence_fs.get(self._db_path, self._db_path)
+                checksum = calculate_checksum(cast(str, self._db_path))
 
-        async with self._session() as session:
-            yield session
+            async with self._session() as session:
+                yield session
 
-        if self._persistence_fs:
-            new_checksum = calculate_checksum(cast(str, self._db_path))
-            if new_checksum != checksum:
-                self._persistence_fs.put(self._db_path, self._db_path)
+            if self._persistence_fs:
+                new_checksum = calculate_checksum(cast(str, self._db_path))
+                if new_checksum != checksum:
+                    self._persistence_fs.put(self._db_path, self._db_path)
 
     async def shutdown(self) -> None:
         """
@@ -89,9 +95,5 @@ async def create_db_ctx(db_url: str, log_sql_stmts: bool = False) -> DBCtx:
     async with async_engine.begin() as conn:
         # testing DB credentials...
         await conn.execute(text("select '1'"))
-
-        await conn.run_sync(
-            SQLModel.metadata.create_all
-        )  # create_all is a blocking method
 
     return DBCtx(async_engine)

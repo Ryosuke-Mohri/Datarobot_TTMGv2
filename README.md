@@ -129,36 +129,7 @@ This template is organized into modular components:
 - **web/**: FastAPI backend ([README](web/README.md))
 - **infra/**: Pulumi infrastructure-as-code
 
-```mermaid
-graph TD
-    A[React Frontend] --> B[FastAPI Backend]
-    B --> C[Multi-agent CrewAI System]
-    C --> D[Guarded RAG LLM Model]
-    D --> E[LLM Gateway with 80+ open/closed source LLMs]
-
-    subgraph "DataRobot Custom Applications"
-        A
-        B
-    end
-
-    subgraph "DataRobot Agentic Workflow"
-        C
-    end
-
-    subgraph "DataRobot Moderated RAG"
-        D
-    end
-
-    subgraph "DataRobot LLM Gateway"
-        E
-    end
-
-    style A fill:#f9d5d5
-    style B fill:#dbeafe
-    style C fill:#f9d5d5
-    style D fill:#f9d5d5
-    style E fill:#f9d5d5
-```
+![Architectural Diagram](_docs/static/img/architectural-diagram.png)
 
 Each component can be developed and deployed independently or as part of the full stack.
 

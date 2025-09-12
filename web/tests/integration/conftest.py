@@ -17,6 +17,7 @@ import pytest
 from app.config import Config
 from app.db import DBCtx, create_db_ctx
 from app.users.user import User, UserCreate, UserRepository
+from tests.conftest import migrate_tables_to_db
 
 
 @pytest.fixture
@@ -31,6 +32,7 @@ async def db_ctx() -> DBCtx:
     )
 
     db = await create_db_ctx(config.database_uri)
+    await migrate_tables_to_db(db)
     return db
 
 

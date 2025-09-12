@@ -67,6 +67,9 @@ def chat(
     # access tokens for external services.
     initialize_authorization_context(completion_create_params)
 
+    # Change working directory to the directory containing this file
+    # We do this because Crew looks for training pkl files relative to the current working directory
+    os.chdir(os.path.dirname(os.path.abspath(__file__)))
     # Instantiate the agent, all fields from the completion_create_params are passed to the agent
     # allowing environment variables to be passed during execution
     agent = MyAgent(**completion_create_params)

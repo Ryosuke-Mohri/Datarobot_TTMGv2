@@ -11,6 +11,7 @@ export const useCurrentUser = () => {
         queryKey: authKeys.currentUser,
         queryFn: () => getCurrentUser(),
         retry: false,
+        staleTime: 60000, // User shouldn't suddenly change, set longer stale time
     });
 };
 

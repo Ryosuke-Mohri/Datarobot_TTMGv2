@@ -39,8 +39,17 @@ const DEFAULT_CHAT_NAME = 'New Chat';
 export const getChatNameOrDefaultWithTimestamp = (chat: IChat) => {
     const chatName = chat.name || DEFAULT_CHAT_NAME;
     if (chatName === DEFAULT_CHAT_NAME) {
-        const date = new Date(chat.created_at);
-        return `${chatName} ${date.toLocaleString()}`;
+        const date = chat.created_at ? new Date(chat.created_at) : new Date();
+        const formattedDate = new Intl.DateTimeFormat('en', {
+            month: 'long',
+            day: 'numeric',
+        }).format(date);
+        const formattedTime = new Intl.DateTimeFormat('en', {
+            hour: 'numeric',
+            minute: '2-digit',
+            hour12: true,
+        }).format(date);
+        return `Chat ${formattedDate} ${formattedTime}`;
     }
     return chatName;
 };

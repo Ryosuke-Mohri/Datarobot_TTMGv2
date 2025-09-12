@@ -25,6 +25,7 @@ dependencies = [
     "asyncpg>=0.30.0",
     "datarobot[auth-authlib]>=3.8.2,<=3.9.0",
     "litellm>=1.76.0",
+    "alembic>=1.16.5"
 ]
 
 

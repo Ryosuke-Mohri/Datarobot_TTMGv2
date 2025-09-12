@@ -2,11 +2,11 @@
   "model": "datarobot-deployed-llm",
   "messages": [
     {
-      "content": "You are a helpful assistant",
+    "content": "You are a helpful assistant. Use the provided document(s) to answer as accurately as possible. If the answer is not contained in the documents, say you don't know. When documents have page numbers, you can reference specific pages and their filenames in your answer.",
       "role": "system"
     },
     {
-      "content": "Artificial Intelligence",
+      "content": "Summarize the tech spec in your files",
       "role": "user"
     }
   ],

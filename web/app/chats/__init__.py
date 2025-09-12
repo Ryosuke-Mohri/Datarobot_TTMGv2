@@ -60,14 +60,14 @@ class ChatRepository:
     def __init__(self, db: DBCtx):
         self._db = db
 
-    async def create_chat(self, chat: ChatCreate) -> Chat:
-        message = Chat(**chat.model_dump())
+    async def create_chat(self, chat_data: ChatCreate) -> Chat:
+        chat = Chat(**chat_data.model_dump())
 
         async with self._db.session() as session:
-            session.add(message)
+            session.add(chat)
             await session.commit()
-            await session.refresh(message)
-            return message
+            await session.refresh(chat)
+            return chat
 
     async def get_chat(self, uuid: uuidpkg.UUID) -> Chat:
         async with self._db.session() as sess:

@@ -45,6 +45,7 @@ export const useCreateChat = () => {
             toast.error(error?.message || 'Failed to send message');
         },
         onSuccess: data => {
+            queryClient.setQueryData<IChat[]>(chatKeys.all, (oldData = []) => [...oldData, data]);
             queryClient.invalidateQueries({ queryKey: chatKeys.chatList() });
             navigate(`/chat/${data.uuid}`);
         },
@@ -126,6 +127,7 @@ export const useChats = () => {
         queryFn: async ({ signal }) => {
             return await getAllChats(signal);
         },
+        staleTime: 60000, // Use 1 minute, we have invalidate calls when item is changed/deleted
     });
 };
 
@@ -133,7 +135,7 @@ export const useChatsDelete = () => {
     const queryClient = useQueryClient();
     return useMutation<void, Error, { chatId: string }>({
         mutationFn: ({ chatId }) => deleteChatById({ chatId }),
-        onSettled: () => queryClient.invalidateQueries({ queryKey: chatKeys.chatList() }),
+        onSuccess: () => queryClient.invalidateQueries({ queryKey: chatKeys.chatList() }),
     });
 };
 
@@ -141,7 +143,7 @@ export const useChatsRename = () => {
     const queryClient = useQueryClient();
     return useMutation<void, Error, { chatId: string; chatName: string }>({
         mutationFn: ({ chatId, chatName }) => renameChatById({ chatId, chatName }),
-        onSettled: () => queryClient.invalidateQueries({ queryKey: chatKeys.chatList() }),
+        onSuccess: () => queryClient.invalidateQueries({ queryKey: chatKeys.chatList() }),
     });
 };
 
@@ -152,5 +154,6 @@ export const useLlmCatalog = () => {
         select: data => {
             return [AGENT_MODEL_LLM, ...data];
         },
+        staleTime: 60000,
     });
 };

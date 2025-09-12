@@ -72,3 +72,9 @@ tasks:
       - echo "Saving Docker image"
       - docker save agent_retrieval_agent:latest | gzip > docker_context.tar.gz
     silent: true
+  train:
+    desc: 🚂 [agent_retrieval_agent] Train the model
+    cmds:
+      - echo "Training the model"
+      - uv run python custom_model/train.py
+    silent: true

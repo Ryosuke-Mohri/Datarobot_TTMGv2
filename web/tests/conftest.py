@@ -23,6 +23,7 @@ from datarobot.auth.datarobot.oauth import AsyncOAuth
 from datarobot.auth.oauth import OAuthFlowSession, OAuthToken
 from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
+from sqlmodel import SQLModel
 
 from app import create_app
 from app.auth.api_key import APIKeyValidator, DRUser
@@ -36,6 +37,11 @@ from app.messages import MessageRepository
 from app.users.identity import AuthSchema, Identity, IdentityCreate, IdentityRepository
 from app.users.tokens import Tokens
 from app.users.user import User, UserCreate, UserRepository
+
+
+async def migrate_tables_to_db(db: DBCtx) -> None:
+    async with db.engine.begin() as conn:
+        await conn.run_sync(SQLModel.metadata.create_all)
 
 
 @pytest.fixture()
@@ -91,6 +97,8 @@ async def db_deps(config: Config) -> AsyncGenerator[Deps, None]:
         deps_ctx.api_key_validator = AsyncMock(spec=APIKeyValidator)
         deps_ctx.tokens = AsyncMock(spec=Tokens)
         deps_ctx.upload_path = upload_dir
+
+        await migrate_tables_to_db(deps_ctx.db)
         yield deps_ctx
 
 
@@ -109,7 +117,6 @@ def db_webapp(config: Config, db_deps: Deps) -> FastAPI:
     """
     app = create_app(config=config, deps=db_deps)
     app.state.deps = db_deps
-
     return app
 
 
@@ -222,6 +229,7 @@ async def make_authenticated_client(
         # Create the app with these shared dependencies
         app = create_app(config=config, deps=shared_deps)
         app.state.deps = shared_deps
+        await migrate_tables_to_db(shared_deps.db)
 
         async def _make_client(
             email: str = "test@datarobot.com",

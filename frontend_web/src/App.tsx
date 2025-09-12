@@ -23,15 +23,21 @@ import { useAppState } from '@/state';
 
 import './App.css';
 import { useLlmCatalog } from '@/api/chat/hooks';
+import { useCurrentUser } from '@/api/auth/hooks.ts';
 import { Toaster } from './components/ui/toast';
 import { RenameChatModal } from '@/components/custom/rename-chat-modal.tsx';
 
 function App() {
-    const { data: availableLlmCatalog, isLoading, isFetched } = useLlmCatalog();
+    const {
+        data: availableLlmCatalog,
+        isLoading: isLlmCatalogLoading,
+        isFetched: isLlmCatalogFetched,
+    } = useLlmCatalog();
+    const { isLoading: isUserLoading } = useCurrentUser();
     const { selectedLlmModel, setSelectedLlmModel, setAvailableLlmModels, availableLlmModels } =
         useAppState();
     useEffect(() => {
-        if (isFetched && availableLlmCatalog?.length && !availableLlmModels) {
+        if (isLlmCatalogFetched && availableLlmCatalog?.length && !availableLlmModels) {
             setAvailableLlmModels(availableLlmCatalog);
             if (!selectedLlmModel) {
                 setSelectedLlmModel(availableLlmCatalog[0]);
@@ -42,7 +48,7 @@ function App() {
         setSelectedLlmModel,
         selectedLlmModel,
         availableLlmCatalog,
-        isFetched,
+        isLlmCatalogFetched,
         availableLlmModels,
     ]);
 
@@ -51,7 +57,7 @@ function App() {
             <div className="flex flex-1 min-h-screen dark">
                 <AppSidebar />
                 <div className="flex flex-col flex-1 h-screen">
-                    {isLoading ? (
+                    {isUserLoading && isLlmCatalogLoading ? (
                         <div
                             className="flex items-center gap-3 h-screen justify-center"
                             data-testid="app-loader"

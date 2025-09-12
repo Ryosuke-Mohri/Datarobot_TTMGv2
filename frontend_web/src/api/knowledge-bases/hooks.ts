@@ -44,6 +44,7 @@ export const useListKnowledgeBases = () => {
     return useQuery({
         queryKey: knowledgeBasesKeys.all,
         queryFn: ({ signal }) => listKnowledgeBases(signal),
+        staleTime: 60000, // Use 1 minute, we have invalidate calls when item is changed/deleted
     });
 };
 
@@ -52,6 +53,7 @@ export const useGetKnowledgeBase = (knowledgeBaseUuid?: string) => {
         queryKey: knowledgeBasesKeys.byId(knowledgeBaseUuid!),
         queryFn: ({ signal }) => getKnowledgeBase(knowledgeBaseUuid!, signal),
         enabled: !!knowledgeBaseUuid,
+        staleTime: 60000, // Use 1 minute, we have invalidate calls when item is changed/deleted
     });
 };
 
@@ -97,6 +99,7 @@ export const useListFiles = (knowledgeBaseUuid?: string) => {
             ? knowledgeBasesKeys.files(knowledgeBaseUuid)
             : knowledgeBasesKeys.allFiles,
         queryFn: ({ signal }) => listFiles(knowledgeBaseUuid, signal),
+        staleTime: 60000, // Use 1 minute, we have invalidate calls when item is changed/deleted
     });
 };
 
@@ -144,9 +147,11 @@ export const useFileUploadMutation = ({
                 },
             });
         },
-
         onSuccess: data => {
-            queryClient.invalidateQueries({ queryKey: knowledgeBasesKeys.all });
+            const queryKey = baseUuid
+                ? knowledgeBasesKeys.files(baseUuid)
+                : knowledgeBasesKeys.allFiles;
+            queryClient.invalidateQueries({ queryKey });
             onSuccess(data as FileSchema[]);
         },
         onError: (error: UploadError | AxiosError) => {
@@ -167,7 +172,6 @@ export const useFileUploadMutation = ({
 
             onError(uploadError);
         },
-        onSettled: () => queryClient.invalidateQueries({ queryKey: knowledgeBasesKeys.all }),
     });
 
     return { ...mutation, progress };
