@@ -84,14 +84,13 @@ tasks:
       - echo "🔨 Deploying the backend infrastructure.."
       - |
         uv run pulumi up \
-          --target 'urn:pulumi:*::talk-to-my-docs::custom:datarobot:CustomModelDeployment$datarobot:index/deployment:Deployment::Talk to My Docs Deployment [*]' \
-          --target 'urn:pulumi:*::talk-to-my-docs::custom:datarobot:CustomModelDeployment::Talk to My Docs LLM deployment [*]' \
+          --target 'urn:pulumi:*::talk-to-my-docs::datarobot:index/deployment:Deployment::Talk to My Docs LLM Blueprint Deployment [*]' \
           --target 'urn:pulumi:*::talk-to-my-docs::datarobot:index/predictionEnvironment:PredictionEnvironment::Talk to My Docs Prediction Environment [*]' \
           --target 'urn:pulumi:*::talk-to-my-docs::datarobot:index/useCase:UseCase::Talk to My Docs [*]' \
-          --target 'urn:pulumi:*::talk-to-my-docs::custom:datarobot:CustomModelDeployment$datarobot:index/registeredModel:RegisteredModel::Talk to My Docs Registered Model [*]' \
+          --target 'urn:pulumi:*::talk-to-my-docs::datarobot:index/customModel:CustomModel::Talk to My Docs LLM Blueprint Model [*]' \
           --target 'urn:pulumi:*::talk-to-my-docs::datarobot:index/customModel:CustomModel::Talk to My Docs Playground Model [*]' \
+          --target 'urn:pulumi:*::talk-to-my-docs::datarobot:index/registeredModel:RegisteredModel::Talk to My Docs LLM Registered Model [*]' \
           --target 'urn:pulumi:*::talk-to-my-docs::datarobot:index/llmBlueprint:LlmBlueprint::Talk to My Docs LLM Blueprint [*]' \
           --target 'urn:pulumi:*::talk-to-my-docs::datarobot:index/playground:Playground::Talk to My Docs Playground [*]' \
           --target 'urn:pulumi:*::talk-to-my-docs::datarobot:index/appOauth:AppOauth::Talk to My Docs Google Client Secret [*]' \
           --target 'urn:pulumi:*::talk-to-my-docs::datarobot:index/appOauth:AppOauth::Talk to My Docs Box Client Secret [*]'
-
