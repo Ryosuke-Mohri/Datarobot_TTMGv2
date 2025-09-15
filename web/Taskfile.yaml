@@ -5,6 +5,8 @@ version: '3'
 tasks:
   install:
     desc: "🔧 Install dependencies"
+    deps:
+      - migrate
     cmds:
       - echo "🔧 Installing dependencies.."
       - uv sync --all-extras --dev
@@ -15,6 +17,11 @@ tasks:
     dir: ../frontend_web
     cmds:
       - npm run build
+  migrate:
+    desc: "🛠️ Migrate the database"
+    cmds:
+      - echo "🛠️  Running migrations.."
+      - uv run python alembic_migration.py
   dev:
     silent: true
     desc: "🔨 Run the development server"
@@ -22,6 +29,7 @@ tasks:
       TEST_USER_EMAIL: "developer@example.com"
     deps:
       - build-frontend
+      - migrate
     cmds:
       - echo "🔨 Starting development server"
       - uv run uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
@@ -34,6 +42,7 @@ tasks:
       TEST_USER_API_KEY: "{{ .DATAROBOT_API_TOKEN }}"
     deps:
       - build-frontend
+      - migrate
     cmds:
       - echo "🔨 Starting development server"
       - uv run uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
