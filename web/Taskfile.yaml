@@ -2,6 +2,10 @@
 # https://taskfile.dev
 version: '3'
 
+# In Notebooks, drop PYTHONPATH to avoid dependency collisions
+env:
+  CALCULATED_PYTHONPATH: "{{ if and .PYTHONPATH .NOTEBOOK_ID }}{{ else }}{{ .PYTHONPATH }}{{ end }}"
+
 tasks:
   install:
     desc: "🔧 Install dependencies"
@@ -30,7 +34,7 @@ tasks:
       - migrate
     cmds:
       - echo "🔨 Starting development server"
-      - uv run uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
+      - PYTHONPATH="$CALCULATED_PYTHONPATH" uv run uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
   dev-agent:
     silent: true
     desc: "🔨 Run the development server with the local agent server"
@@ -43,7 +47,7 @@ tasks:
       - migrate
     cmds:
       - echo "🔨 Starting development server"
-      - uv run uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
+      - PYTHONPATH="$CALCULATED_PYTHONPATH" uv run uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
 
   lint:
     silent: true

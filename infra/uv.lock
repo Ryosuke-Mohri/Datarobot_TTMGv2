@@ -750,7 +750,7 @@ requires-dist = [
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.8.0" },
     { name = "pulumi", specifier = ">=3.175.0" },
     { name = "pulumi-command", specifier = ">=1.0.0" },
-    { name = "pulumi-datarobot", specifier = ">=0.10.17" },
+    { name = "pulumi-datarobot", specifier = ">=0.10.19" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.4.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=6.1.1" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.3.0" },
@@ -1464,14 +1464,14 @@ wheels = [
 
 [[package]]
 name = "pulumi-datarobot"
-version = "0.10.17"
+version = "0.10.19"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "parver" },
     { name = "pulumi" },
     { name = "semver" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/70/68/2a68e236d028bfd1c3b6fca47df270c5e7d8cc6a1c22b717d8bc7e4f5bb0/pulumi_datarobot-0.10.17.tar.gz", hash = "sha256:13da857ae0dafbc7de69d45c1c56528f87eda0fb8654c5bf5a001c5af5f6c6d6", size = 119039 }
+sdist = { url = "https://files.pythonhosted.org/packages/9f/26/b30367bc73d8988c9d2fcd1a8899041eeb971dd5a516a1e33e5711da6bad/pulumi_datarobot-0.10.19.tar.gz", hash = "sha256:e72b19d182d0c675e343d59e254a4855d89c142b96aa48b164ecca55ca36756a", size = 118967 }
 
 [[package]]
 name = "pycparser"

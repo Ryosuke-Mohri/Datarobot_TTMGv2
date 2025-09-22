@@ -28,35 +28,47 @@ A modular, application template for building, developing, and deploying an AI-po
 
 If you are using DataRobot Codespaces, this is already complete for you. If not, install the following tools:
 
+- [Python](https://www.python.org/downloads/) (3.11+ required for infrastructure and backend development)
 - [Taskfile.dev](https://taskfile.dev/#/installation) (task runner)
 - [uv](https://docs.astral.sh/uv/getting-started/installation/) (Python package manager)
+- [Node.js](https://nodejs.org/en/download/) (JavaScript runtime for frontend development)
 - [Pulumi](https://www.pulumi.com/docs/iac/download-install/) (infrastructure as code)
 
 #### Example Installation Commands
 
 For the latest and most accurate installation instructions for your platform, visit:
 
+- https://www.python.org/downloads/
 - https://taskfile.dev/installation/
-- https://www.pulumi.com/docs/iac/download-install/
 - https://docs.astral.sh/uv/getting-started/installation/
+- https://nodejs.org/en/download/
+- https://www.pulumi.com/docs/iac/download-install/
 
 We provide the instructions below to save you a context flip, but your system may not meet the common expectations from these shortcut scripts:
 
 **macOS:**
 
 ```sh
+brew install python
 brew install go-task/tap/go-task
 brew install uv
+brew install node
 brew install pulumi/tap/pulumi
 ```
 
 **Linux (Debian/Ubuntu/DataRobot Codespaces):**
 
 ```sh
+# Python
+sudo apt-get update
+sudo apt-get install -y python3 python3-pip python3-venv
 # Taskfile.dev
 sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -d -b ~/.local/bin
 # uv
 curl -Ls https://astral.sh/uv/install.sh | sh
+# Node.js
+curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
+sudo apt-get install -y nodejs
 # Pulumi
 curl -fsSL https://get.pulumi.com | sh
 ```
@@ -64,13 +76,20 @@ curl -fsSL https://get.pulumi.com | sh
 **Windows (PowerShell):**
 
 ```powershell
+# Python
+winget install --id=Python.Python.3.12 -e
 # Taskfile.dev
-winget install --id=GoTask.GoTask -e
+winget install --id=Task.Task -e
 # uv
 winget install --id=astral-sh.uv  -e
+# Node.js
+winget install --id=OpenJS.NodeJS -e
 # Pulumi
 winget install pulumi
 winget upgrade pulumi
+# Windows Developer Tools
+winget install Microsoft.VisualStudio.2022.BuildTools
+# For Windows 10/11, toggle Developer Mode to "On" under System > For developer to enable symbolic link
 ```
 
 ### Pulumi Login

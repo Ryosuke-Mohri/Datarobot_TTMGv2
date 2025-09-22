@@ -53,5 +53,5 @@ class Config(DataRobotAppFrameworkBaseSettings):
 
     storage_path: str = ".data/storage"
 
-    log_level: LogLevel = LogLevel.DEBUG
+    log_level: LogLevel = LogLevel.INFO
     log_format: FormatType = "text"

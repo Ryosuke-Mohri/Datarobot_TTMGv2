@@ -106,9 +106,9 @@ prediction_environment = datarobot.PredictionEnvironment(
 
 # Register the custom model
 llm_registered_model = datarobot.RegisteredModel(
-    resource_name="Talk to My Docs LLM Blueprint Registered Model [{PROJECT_NAME}]",
+    resource_name=f"Talk to My Docs LLM Blueprint Registered Model [{PROJECT_NAME}]",
     custom_model_version_id=llm_custom_model.version_id,
-    name="LLM Registered Model " + llm_resource_name,
+    name=f"LLM Registered Model [{PROJECT_NAME}] " + llm_resource_name,
     use_case_ids=[use_case.id],
 )
 

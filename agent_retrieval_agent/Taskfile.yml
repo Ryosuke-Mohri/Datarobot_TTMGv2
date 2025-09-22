@@ -1,6 +1,11 @@
 ---
 # https://taskfile.dev
 version: '3'
+
+# In Notebooks, drop PYTHONPATH to avoid dependency collisions
+env:
+  CALCULATED_PYTHONPATH: "{{ if and .PYTHONPATH .NOTEBOOK_ID }}{{ else }}{{ .PYTHONPATH }}{{ end }}"
+
 tasks:
   install:
     desc: 🛠️ [agent_retrieval_agent] Update local dependencies
@@ -50,7 +55,7 @@ tasks:
     desc: 🖥️ [agent_retrieval_agent] Run the CLI with provided arguments
     cmds:
       - echo "Running CLI {{.CLI_ARGS}}"
-      - uv run cli.py {{.CLI_ARGS}}
+      - PYTHONPATH="$CALCULATED_PYTHONPATH" uv run cli.py {{.CLI_ARGS}}
     silent: true
   dev:
     desc: 🔨 [agent_retrieval_agent] Run the development server
@@ -59,7 +64,7 @@ tasks:
       FLASK_DEBUG: 1
     cmds:
       - echo "Running development server on http://localhost:8842"
-      - uv run drum server -cd custom_model --address localhost:8842 --target-type agenticworkflow
+      - PYTHONPATH="$CALCULATED_PYTHONPATH" uv run drum server -cd custom_model --address localhost:8842 --target-type agenticworkflow
       - wait
   build-docker:
     desc: 🐳 [agent_retrieval_agent] Build the Docker image
