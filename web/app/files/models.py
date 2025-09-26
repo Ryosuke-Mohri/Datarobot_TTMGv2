@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import logging
 import uuid as uuidpkg
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
@@ -24,6 +25,8 @@ if TYPE_CHECKING:
     from app.knowledge_bases import KnowledgeBase
 from app.knowledge_bases import KnowledgeBaseRepository
 from app.users.user import User
+
+logger = logging.getLogger(__name__)
 
 
 class File(SQLModel, table=True):
@@ -161,6 +164,7 @@ class FileRepository:
 
     async def delete_file(self, file_id: int, owner_id: int) -> bool:
         """Delete a file (must be owned by the user)."""
+        logger.debug("Deleting %d file for %d user", file_id, owner_id)
         async with self._db.session(writable=True) as session:
             query = await session.exec(
                 select(File).where(File.id == file_id, File.owner_id == owner_id)
@@ -170,12 +174,17 @@ class FileRepository:
             if not file:
                 return False
             if file.knowledgebase:
+                logger.debug(
+                    "Updating knowledgebase tokens for file (file_id=%d, kb_id=%d).",
+                    file_id,
+                    file.knowledgebase.id,
+                )
                 knowledge_base_repo = KnowledgeBaseRepository(self._db)
                 new_token_count = max(
                     0, file.knowledgebase.token_count - file.size_tokens
                 )
-                await knowledge_base_repo.update_knowledge_base_token_count(
-                    file.knowledgebase, new_token_count
+                await knowledge_base_repo._update_knowledge_base_token_count_in_session(
+                    file.knowledgebase, new_token_count, session
                 )
 
             await session.delete(file)

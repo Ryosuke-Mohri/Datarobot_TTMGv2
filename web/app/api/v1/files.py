@@ -512,12 +512,12 @@ async def delete_file(
     """
     Delete a file by UUID.
     """
-    file_repo = request.app.state.deps.file_repo
+    file_repo: FileRepository = request.app.state.deps.file_repo
 
     # First get the file to find the ID
     file = await file_repo.get_file(file_uuid=file_uuid)
 
-    if not file:
+    if not file or not file.id:
         err = ErrorSchema(
             code=ErrorCodes.UNKNOWN_ERROR,
             message=f"File with UUID {file_uuid} not found",

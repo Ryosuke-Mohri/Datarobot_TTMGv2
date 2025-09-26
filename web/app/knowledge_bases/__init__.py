@@ -11,18 +11,22 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import logging
 import uuid as uuidpkg
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from sqlalchemy import Column, DateTime
 from sqlmodel import Field, Relationship, SQLModel, select
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.db import DBCtx
 
 if TYPE_CHECKING:
     from app.files import File
     from app.users.user import User
+
+logger = logging.getLogger(__name__)
 
 
 class KnowledgeBase(SQLModel, table=True):
@@ -205,22 +209,44 @@ class KnowledgeBaseRepository:
             knowledge_base: The knowledge base to update
             token_count: The new token count to set
         """
+        logging.debug(
+            "Updating token count (kb_id=%d, token_count=%c).",
+            knowledge_base and knowledge_base.id,
+            token_count,
+        )
         async with self._db.session(writable=True) as session:
-            if not knowledge_base or not knowledge_base.id:
-                return None
-
-            # Requery the knowledge base in the current session to avoid detached instance issues
-            query = await session.exec(
-                select(KnowledgeBase).where(KnowledgeBase.id == knowledge_base.id)
+            kb_in_session = await self._update_knowledge_base_token_count_in_session(
+                knowledge_base, token_count, session
             )
-            kb_in_session = query.first()
 
-            if not kb_in_session:
-                return None
-
-            kb_in_session.token_count = token_count
-            kb_in_session.updated_at = datetime.now(timezone.utc)
-
+            logging.debug(
+                "Committing update to knowledge base (kb_id=%d).",
+                kb_in_session and kb_in_session.id,
+            )
             await session.commit()
             await session.refresh(kb_in_session)
             return kb_in_session
+
+    async def _update_knowledge_base_token_count_in_session(
+        self, knowledge_base: KnowledgeBase, token_count: int, session: AsyncSession
+    ) -> KnowledgeBase | None:
+        # Early return if token count hasn't changed
+        if knowledge_base.token_count == token_count:
+            return knowledge_base
+
+        if not knowledge_base or not knowledge_base.id:
+            return None
+
+        # Requery the knowledge base in the current session to avoid detached instance issues
+        query = await session.exec(
+            select(KnowledgeBase).where(KnowledgeBase.id == knowledge_base.id)
+        )
+        kb_in_session: KnowledgeBase | None = query.first()
+
+        if not kb_in_session:
+            return None
+
+        kb_in_session.token_count = token_count
+        kb_in_session.updated_at = datetime.now(timezone.utc)
+
+        return kb_in_session

@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import {
     deleteChatById,
@@ -14,6 +14,7 @@ import { chatKeys } from './keys';
 import { IChatMessage, IPostMessageContext, IUserMessage, IChat } from './types';
 import { useAppState } from '@/state';
 import { AGENT_MODEL_LLM } from '@/api/chat/constants.ts';
+import { ROUTES } from '@/pages/routes.ts';
 
 export const useCreateChat = () => {
     const { selectedLlmModel } = useAppState();
@@ -133,9 +134,17 @@ export const useChats = () => {
 
 export const useChatsDelete = () => {
     const queryClient = useQueryClient();
+    const navigate = useNavigate();
+    const location = useLocation();
+
     return useMutation<void, Error, { chatId: string }>({
         mutationFn: ({ chatId }) => deleteChatById({ chatId }),
-        onSuccess: () => queryClient.invalidateQueries({ queryKey: chatKeys.chatList() }),
+        onSuccess: (_, { chatId }) => {
+            queryClient.invalidateQueries({ queryKey: chatKeys.chatList() });
+            if (location.pathname.includes(chatId)) {
+                navigate(ROUTES.CHAT);
+            }
+        },
     });
 };
 

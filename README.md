@@ -34,6 +34,12 @@ If you are using DataRobot Codespaces, this is already complete for you. If not,
 - [Node.js](https://nodejs.org/en/download/) (JavaScript runtime for frontend development)
 - [Pulumi](https://www.pulumi.com/docs/iac/download-install/) (infrastructure as code)
 
+##### DataRobot Codespaces Setup
+
+If you are developing within a DataRobot codespaces, in order to test from the codespace the development ports need to be exposed. You can check this in the "Exposed Ports" section of your "Session Environment" tab (pictured below). You should have the ports 5173 (frontend), 8080 (application server) and 8842 (agent server) exposed. This should have been automatically enabled if you created this application template from the gallery, otherwise (e.g. if cloned) configure these ports manually. There will be a link next to the port to a URL where the service can be accessed when running locally in the codespace.
+
+![Screenshot of Codespaces Session Environment.](_docs/static/img/screenshot-codespaces-ports.png)
+
 #### Example Installation Commands
 
 For the latest and most accurate installation instructions for your platform, visit:
