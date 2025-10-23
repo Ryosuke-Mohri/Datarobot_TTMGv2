@@ -34,22 +34,23 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     """Upgrade schema."""
     # Drop the old single-column unique constraint
-    op.drop_constraint("uq_identity_provider_user_id", "identity", type_="unique")
+    with op.batch_alter_table("identity", schema=None) as batch_op:
+        batch_op.drop_constraint("uq_identity_provider_user_id", type_="unique")
 
-    # Create the new composite unique constraint
-    op.create_unique_constraint(
-        "uq_identity_provider_user_id_type",
-        "identity",
-        ["provider_user_id", "provider_type"],
-    )
+        # Create the new composite unique constraint
+        batch_op.create_unique_constraint(
+            "uq_identity_provider_user_id_type",
+            ["provider_user_id", "provider_type"],
+        )
 
 
 def downgrade() -> None:
     """Downgrade schema."""
     # Drop the composite unique constraint
-    op.drop_constraint("uq_identity_provider_user_id_type", "identity", type_="unique")
+    with op.batch_alter_table("identity", schema=None) as batch_op:
+        batch_op.drop_constraint("uq_identity_provider_user_id_type", type_="unique")
 
-    # Recreate the old single-column unique constraint
-    op.create_unique_constraint(
-        "uq_identity_provider_user_id", "identity", ["provider_user_id"]
-    )
+        # Recreate the old single-column unique constraint
+        batch_op.create_unique_constraint(
+            "uq_identity_provider_user_id", ["provider_user_id"]
+        )
