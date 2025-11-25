@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [0.2.8] - 2025-11-25
+
+### Changed
+
+- Switched Pulumi frontend build to `npm ci` for reproducible installs and deterministic caching
+- Added sha-based triggers that watch key source, asset, and config files (including `public/`, Vite/tailwind configs, `.npmrc`, and tsconfig variants) so rebuilds only run when inputs change
+
+### Documentation
+
+- Updated usage instructions for LLM_DEFAULT_MODEL
+- Updated README Quick Start section
 
 ## [0.2.7] - 2025-11-19
 
@@ -12,13 +25,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Refreshed setup guide and README links to reflect the latest CLI workflow
 
-
 ## [0.2.6] - 2025-11-17
 
 ### Fixed
 
 - Hardened application startup scripts to better support pre-bundled images
-
 
 ## [0.2.5] - 2025-11-12
 
@@ -27,13 +38,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Corrected issue with uniqueness in OAuth provider identities
 - Fixed issue with overriding SQLite file during write operation
 
-
 ## [0.2.2] - 2025-10-21
 
 ### Fixed
 
 - Corrected issue with uniqueness in OAuth provider identities
-
 
 ## [0.2.1] - 2025-10-21
 

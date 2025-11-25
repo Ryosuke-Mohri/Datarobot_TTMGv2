@@ -5,12 +5,12 @@ on:
   push:
     branches: ["main"]
     paths:
-      - 'frontend_web/**'
+      - "frontend_web/**"
 
   pull_request:
     branches: ["main"]
     paths:
-      - 'frontend_web/**'
+      - "frontend_web/**"
 
   workflow_dispatch:
 
@@ -37,7 +37,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          npm install
+          npm ci
         working-directory: frontend_web
 
       - name: Run Vitest

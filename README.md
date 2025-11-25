@@ -9,7 +9,7 @@ A modular, application template for building, developing, and deploying an AI-po
 
 ## Table of Contents
 
-1. [Quick Start](#quick-start)
+1. [Quick Start](#-quick-start)
 2. [Development Workflow](#development-workflow)
 3. [Deployment](#deployment)
 4. [Air-Gapped Deployment](#air-gapped-deployment)
@@ -23,7 +23,117 @@ A modular, application template for building, developing, and deploying an AI-po
 
 ---
 
-## Quick Start
+## 🚀 Quick Start
+
+### Build in Codespace
+
+If you’re using **DataRobot Codespaces**, everything you need is already installed.
+Follow the steps below to get the entire application running in just a few minutes.
+
+#### 1. Prepare Your Environment File
+
+Rename `.env.template` → `.env`
+
+Open `.env` and fill in these required values (anything simple is fine for local use):
+
+- `PULUMI_CONFIG_PASSPHRASE=1234abc` Enter a pulumi passphrase (can be anything, such as 1234)
+- `SESSION_SECRET_KEY=1234abc` session secret (can be anything, such as1234)
+
+#### 2. Open a Terminal
+
+Use the built-in terminal on the left sidebar of the Codespace.
+
+`task` commands will read from `.env` automatically.
+If you need to load these values directly into your shell:
+
+```sh
+set -a && source .env && set +a
+```
+
+#### 3. Install & Deploy Everything
+
+Run these commands together:
+
+```sh
+task install-all
+task deploy
+```
+
+**During the deploy step:**
+
+- You will be asked to enter a stack name → choose anything (e.g., dev).
+- When prompted to update, select Yes using the arrow keys.
+
+Once deployment finishes, a link to your application will appear in the terminal.\
+👉 **Click the link to open and use your app!**
+
+### Build Locally
+
+Follow the steps below to set up your local development environment.
+
+#### 1. Install Pulumi (if you don’t have it yet)
+
+If Pulumi is not already installed, follow the installation instructions in the Pulumi [documentation](https://www.pulumi.com/docs/iac/download-install/).
+After installing for the first time, **restart your terminal** and run:
+
+```sh
+pulumi login --local      # omit --local to use Pulumi Cloud (requires an account)
+```
+
+#### 2. Clone the Repository
+
+```sh
+git clone https://github.com/datarobot-community/talk-to-my-docs-agents
+cd talk-to-my-docs-agents
+```
+
+#### 3. Create and Populate Your `.env` File
+
+Rename `.env.template` → `.env`, then fill in the required credentials:
+
+```sh
+DATAROBOT_API_TOKEN=...             # Required.
+DATAROBOT_ENDPOINT=...              # Required. e.g. https://app.datarobot.com/api/v2
+
+PULUMI_CONFIG_PASSPHRASE=...      # Required: Choose any alphanumeric passphrase for Pulumi config encryption
+SESSION_SECRET_KEY=...            # Required: Random string used for Web app security
+```
+
+`task` commands will read from `.env` automatically.
+If you need to load these values directly into your shell:
+
+**Linux/macOS:**
+
+```sh
+set -a && source .env && set +a
+```
+
+**Windows (PowerShell):**
+
+```sh
+Get-Content .env | ForEach-Object {
+    if ($_ -match '^\s*([^#][^=]*)=(.*)$') {
+        [System.Environment]::SetEnvironmentVariable($matches[1], $matches[2])
+    }
+}
+```
+
+#### 3. Install & Deploy Everything
+
+Run these commands together:
+
+```sh
+task install-all
+task infra:up
+```
+
+**During the deploy step:**
+
+- You will be asked to enter a stack name → choose anything (e.g., dev).
+- When prompted to update, select Yes using the arrow keys.
+
+Once deployment finishes, a link to your application will appear in the terminal.\
+👉 **Click the link to open and use your app!**
 
 ### Prerequisites
 
@@ -117,41 +227,6 @@ We recommend using a shared backend like Ceph, Minio, S3, or Azure Blob Storage.
 more details. For production CI/CD information see our comprehensive
 [CI/CD Guide for Application Templates](https://docs.datarobot.com/en/docs/workbench/wb-apps/app-templates/pulumi-tasks/cicd-tutorial.html)
 
-### Clone the Repository
-
-```sh
-git clone https://github.com/datarobot-community/talk-to-my-docs-agents
-cd talk-to-my-docs-agents
-```
-
-### Environment Setup
-
-Copy the sample environment file and fill in your credentials:
-
-```sh
-cp .env.template .env
-# Edit .env with your API keys and secrets
-```
-
-The `task` commands will automatically read the `.env` file directly to ensure each task gets the correct configuration.
-If you need to source those variables directly into your shell you can:
-
-**Linux/macOS:**
-
-```sh
-set -a && source .env && set +a
-```
-
-**Windows (PowerShell):**
-
-```powershell
-Get-Content .env | ForEach-Object {
-	if ($_ -match '^\s*([^#][^=]*)=(.*)$') {
-		[System.Environment]::SetEnvironmentVariable($matches[1], $matches[2])
-	}
-}
-```
-
 ---
 
 ## Development Workflow
@@ -236,10 +311,12 @@ This template supports using pre-configured execution environments (e.g., for de
 The application supports deployment with custom execution environments for both the web application and agent components:
 
 **Web Application Environment:**
+
 - Set `DATAROBOT_WEB_APP_EXECUTION_ENVIRONMENT_ID` in your `.env` file
 - When configured, the application will use your specified execution environment instead of the default
 
 **Agent Environment:**
+
 - Set `DATAROBOT_AGENT_EXECUTION_ENVIRONMENT_ID` in your `.env` file
 - Alternatively, Pulumi can automatically handle agent environment creation if `docker_context.tar.gz` is present
 
@@ -259,6 +336,7 @@ task infra:deploy
 ```
 
 When using custom execution environments, Pulumi will:
+
 - Use your specified environments instead of defaults
 - Skip build script execution (dependencies already in environment)
 - Upload application code directly for deployment
@@ -289,6 +367,10 @@ Talk to My Docs supports multiple flexible LLM options including:
 - LLM Blueprint with an External LLM
 - Registered model such as an NVIDIA NIM
 - Already Deployed Text Generation model in DataRobot
+
+### LiteLLM Usage
+
+This project uses LiteLLM as a unified interface for LLMs. LiteLLM supports DataRobot natively and verifies that your setup works correctly. When a model name is prefixed with datarobot/, LiteLLM checks the DataRobot-supported model. If you use an external provider, the prefix reflects that instead (e.g., azure/gpt-4o).
 
 ### LLM Configuration Recommended Option
 
@@ -329,7 +411,10 @@ Uncomment and configure these in your `.env` file:
 ```sh
 TEXTGEN_DEPLOYMENT_ID=<your_deployment_id>
 INFRA_ENABLE_LLM=deployed_llm.py
+LLM_DEFAULT_MODEL=<your llm_default_model>
 ```
+
+For more details, see [Configure LLM_DEFAULT_MODEL](README.md#configure-LLM_DEFAULT_MODEL)
 
 #### Registered Model with LLM Blueprint
 
@@ -347,7 +432,6 @@ Configure an LLM with an external LLM provider like Azure, Bedrock, Anthropic, o
 
 ```sh
 INFRA_ENABLE_LLM=blueprint_with_external_llm.py
-LLM_DEFAULT_MODEL="azure/gpt-4o"
 OPENAI_API_VERSION='2024-08-01-preview'
 OPENAI_API_BASE='https://<your_custom_endpoint>.openai.azure.com'
 OPENAI_API_DEPLOYMENT_ID='<your deployment_id>'
@@ -358,6 +442,18 @@ See the [DataRobot documentation](https://docs.datarobot.com/en/docs/gen-ai/play
 
 In addition to the changes for the `.env` file, you can also edit the respective llm.py file to make additional changes
 such as the default LLM, temperature, top_p, etc within the chosen configuration
+
+#### Configure LLM_DEFAULT_MODEL
+
+If you want to use a different default model for configuration testing, you can update it either by setting `LLM_DEFAULT_MODEL` before deploying or by changing the hardcoded `default_model` in `infra/infra/llm.py`.
+Supported external prefixes: `azure`, `bedrock`, `vertex_ai`, `anthropic`.
+
+```sh
+LLM_DEFAULT_MODEL="azure/gpt-4o-mini"  # Example for Azure OpenAI
+```
+
+The full list of supported model names is available in the LLM Gateway catalog:
+https://app.datarobot.com/api/v2/genai/llmgw/catalog/
 
 ---
 
