@@ -749,5 +749,5 @@ class MyAgent:
                 markdown += f"- {constraint}\n"
         else:
             markdown += "- 特に制約はありません。\n"
-        
+
         return markdown
