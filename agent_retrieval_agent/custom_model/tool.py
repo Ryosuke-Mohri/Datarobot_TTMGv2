@@ -319,3 +319,63 @@ class KnowledgeBaseSearchTool(BaseTool):  # type: ignore[misc]
             else:
                 break
         return page_num
+
+
+class GoogleMapsSearchUrlToolSchema(BaseModel):
+    query: str = Field(..., description="場所名や住所などの検索クエリ（例: '渋谷駅' または '東京タワー'）")
+
+
+class GoogleMapsSearchUrlTool(BaseTool):  # type: ignore[misc]
+    name: str = "Generate Google Maps Search URL"
+    description: (
+        "Google Mapsの検索URLを生成します。外部HTTPアクセスは行いません。"
+        "場所名や住所をクエリとして受け取り、Google Mapsの検索URLを返します。"
+    )
+    args_schema: Type[BaseModel] = GoogleMapsSearchUrlToolSchema
+
+    def _run(self, query: str) -> str:
+        """Generate Google Maps search URL."""
+        from urllib.parse import quote_plus
+
+        encoded_query = quote_plus(query)
+        return f"https://www.google.com/maps/search/?api=1&query={encoded_query}"
+
+
+class WebSearchUrlToolSchema(BaseModel):
+    query: str = Field(..., description="Web検索のクエリ（例: '渋谷 レストラン'）")
+
+
+class WebSearchUrlTool(BaseTool):  # type: ignore[misc]
+    name: str = "Generate Web Search URL"
+    description: (
+        "Web検索のURLを生成します。外部HTTPアクセスは行いません。"
+        "検索クエリを受け取り、Google検索のURLを返します。"
+    )
+    args_schema: Type[BaseModel] = WebSearchUrlToolSchema
+
+    def _run(self, query: str) -> str:
+        """Generate web search URL."""
+        from urllib.parse import quote_plus
+
+        encoded_query = quote_plus(query)
+        return f"https://www.google.com/search?q={encoded_query}"
+
+
+class ImageSearchUrlToolSchema(BaseModel):
+    query: str = Field(..., description="画像検索のクエリ（例: '渋谷 カフェ'）")
+
+
+class ImageSearchUrlTool(BaseTool):  # type: ignore[misc]
+    name: str = "Generate Image Search URL"
+    description: (
+        "画像検索のURLを生成します。外部HTTPアクセスは行いません。"
+        "検索クエリを受け取り、Google画像検索のURLを返します。"
+    )
+    args_schema: Type[BaseModel] = ImageSearchUrlToolSchema
+
+    def _run(self, query: str) -> str:
+        """Generate image search URL."""
+        from urllib.parse import quote_plus
+
+        encoded_query = quote_plus(query)
+        return f"https://www.google.com/search?tbm=isch&q={encoded_query}"

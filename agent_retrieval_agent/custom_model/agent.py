@@ -11,32 +11,33 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import json
 import os
 import re
+from datetime import datetime, timedelta
 from textwrap import dedent
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, List, Optional, Union
+from urllib.parse import quote_plus
 
 import models
 from config import Config
-from core.document_loader import SUPPORTED_FILE_TYPES
 from crewai import LLM, Agent, Crew, CrewOutput, Task
-from flask import json
+from flask import json as flask_json
 from helpers import CrewAIEventListener, create_inputs_from_completion_params
 from openai.types.chat import CompletionCreateParams
 from ragas.messages import AIMessage
 from tool import (
-    DocumentReadTool,
-    FileListTool,
-    KnowledgeBaseContentTool,
-    KnowledgeBaseSearchTool,
+    GoogleMapsSearchUrlTool,
+    ImageSearchUrlTool,
+    WebSearchUrlTool,
 )
 
 
 class MyAgent:
-    """MyAgent is a custom agent that uses CrewAI to plan, write, and edit content.
-    It utilizes DataRobot's LLM Gateway or a specific deployment for language model interactions.
-    This example illustrates 3 agents that handle content creation tasks, including planning, writing,
-    and editing blog posts.
+    """デートプラン提案エージェント
+    
+    ユーザーの自然文入力から必須項目を抽出し、3案のデートプランを生成します。
+    集合時間・解散時間を厳守し、30分単位で行程を調整します。
     """
 
     def __init__(
@@ -48,25 +49,7 @@ class MyAgent:
         timeout: Optional[int] = 300,
         **kwargs: Any,
     ):
-        """Initializes the MyAgent class with API key, base URL, model, and verbosity settings.
-
-        Args:
-            api_key: Optional[str]: API key for authentication with DataRobot services.
-                Defaults to None, in which case it will use the DATAROBOT_API_TOKEN environment variable.
-            api_base: Optional[str]: Base URL for the DataRobot API.
-                Defaults to None, in which case it will use the DATAROBOT_ENDPOINT environment variable.
-            model: Optional[str]: The LLM model to use.
-                Defaults to None.
-            verbose: Optional[Union[bool, str]]: Whether to enable verbose logging.
-                Accepts boolean or string values ("true"/"false"). Defaults to True.
-            timeout: Optional[int]: How long to wait for the agent to respond.
-                Defaults to 90 seconds.
-            **kwargs: Any: Additional keyword arguments passed to the agent.
-                Contains any parameters received in the CompletionCreateParams.
-
-        Returns:
-            None
-        """
+        """Initializes the MyAgent class with API key, base URL, model, and verbosity settings."""
         self.api_key = api_key or os.environ.get("DATAROBOT_API_TOKEN")
         self.api_base = api_base or os.environ.get("DATAROBOT_ENDPOINT")
         self.model = model
@@ -80,17 +63,10 @@ class MyAgent:
         elif isinstance(verbose, bool):
             self.verbose = verbose
         self.event_listener = CrewAIEventListener()
-        self.knowledge_base_files: Dict[str, dict[str, str]] = {}
 
     @property
     def api_base_litellm(self) -> str:
-        """Returns a modified version of the API base URL suitable for LiteLLM.
-
-        Strips 'api/v2/' or 'api/v2' from the end of the URL if present.
-
-        Returns:
-            str: The modified API base URL.
-        """
+        """Returns a modified version of the API base URL suitable for LiteLLM."""
         if self.api_base:
             return re.sub(r"api/v2/?$", "", self.api_base)
         return "https://api.datarobot.com"
@@ -101,24 +77,7 @@ class MyAgent:
         use_deployment: bool = True,
         auto_model_override: bool = True,
     ) -> LLM:
-        """Returns the model to use for the LLM.
-
-        If a model is provided, it will be used. Otherwise, the default model will be used.
-        If use_deployment is True, the model will be used with the deployment ID
-        from the config/environment variable LLM_DEPLOYMENT_ID. If False, it will use the
-        LLM Gateway.
-
-        Args:
-            model: Optional[str]: The model to use. If none, it defaults to config.llm_default_model.
-            use_deployment: Optional[bool]: Whether to use the deployment ID from the config.
-                Defaults to True.
-            auto_model_override: Optional[bool]: If True, it will try and use the model
-                specified in the request but automatically back out if the LLM Gateway is
-                not available.
-
-        Returns:
-            str: The model to use.
-        """
+        """Returns the model to use for the LLM."""
         api_base = (
             f"{self.api_base_litellm}/api/v2/deployments/{self.config.llm_deployment_id}/chat/completions"
             if use_deployment
@@ -138,100 +97,33 @@ class MyAgent:
         )
 
     @property
-    def file_list_tool(self) -> FileListTool:
-        return FileListTool()
+    def google_maps_tool(self) -> GoogleMapsSearchUrlTool:
+        return GoogleMapsSearchUrlTool()
 
     @property
-    def document_read_tool(self) -> DocumentReadTool:
-        return DocumentReadTool()
+    def web_search_tool(self) -> WebSearchUrlTool:
+        return WebSearchUrlTool()
 
     @property
-    def knowledge_base_content_tool(self) -> KnowledgeBaseContentTool:
-        """Returns the KnowledgeBaseContentTool instance."""
-        return KnowledgeBaseContentTool(knowledge_base=self.knowledge_base_files)
+    def image_search_tool(self) -> ImageSearchUrlTool:
+        return ImageSearchUrlTool()
 
     @property
-    def knowledge_base_search_tool(self) -> KnowledgeBaseSearchTool:
-        """Returns the KnowledgeBaseSearchTool instance."""
-        return KnowledgeBaseSearchTool(knowledge_base=self.knowledge_base_files)
-
-    @property
-    def agent_file_searcher(self) -> Agent:
+    def input_parser_agent(self) -> Agent:
+        """入力解析エージェント：自然文から必須項目を抽出"""
         return Agent(
-            role="File Searcher",
-            goal='Find the most closely related filenames and their contents from a list of files on the topic: "{topic}" as it relates to the question: "{question}". Your services aren\'t needed if the document is in the question already.',
-            backstory="You are an expert at searching and reading files for helpful information. You can identify the most relevant"
-            "file from a list of files. You are given a list of files and a topic. ",
+            role="Input Parser",
+            goal=(
+                "ユーザーの自然文入力からデートプラン生成に必要な情報を抽出する。"
+                "必須項目が不足している場合は、1〜3個の確認質問を生成する。"
+            ),
+            backstory=(
+                "あなたはユーザーの自然な会話から重要な情報を正確に抽出する専門家です。"
+                "曖昧な表現や日付・時刻の補完も行います。"
+            ),
             allow_delegation=False,
             verbose=self.verbose,
             max_iter=3,
-            llm=self.model_factory(
-                model="datarobot/bedrock/anthropic.claude-sonnet-4-20250514-v1:0",
-                use_deployment=True,
-            ),
-        )
-
-    @property
-    def task_file_search(self) -> Task:
-        return Task(
-            name="File List",
-            description=dedent(
-                """
-                Find the most relevant files to "{topic}" and "{question}" from a list of files.
-                You should always use your tools to determine what files are available.
-                Your task is complete if no files are relevant.
-
-                The chance that the files are relevant is quite low,
-                so you should only select files if they are very clearly relevant.
-                Please return only filenames that have extensions in the approved extension list.
-                This extension list is: """
-                + str(SUPPORTED_FILE_TYPES)
-                + """.
-
-                If no relevant files are found, return an empty array.
-            """
-            ).strip(),
-            expected_output="A JSON object with an array of file paths",
-            output_pydantic=models.FileSearchOutput,
-            agent=self.agent_file_searcher,
-            tools=[self.file_list_tool],
-        )
-
-    @property
-    def task_write(self) -> Task:
-        return Task(
-            name="File Read",
-            description=dedent("""
-                1. Read the contents of the files you are given.
-                2. Think and understand deeply the contents of the file.
-                3. Determine the best way to summarize this information in a concise and understandable way.
-                4. Create a summary that answers the question, "{question}".
-
-                It is extremely critical that you do your best to answer this question.
-                If no file was provided by the file searcher, state 'No file content available to answer the question.'
-            """).strip(),
-            expected_output="A well-written summary that answers the question in markdown format, or a clear statement if no file content is available.",
-            agent=self.agent_file_searcher,
-            tools=[self.document_read_tool],
-        )
-
-    @property
-    def document_in_question_agent(self) -> Agent:
-        """An agent that can be used to answer questions about a document."""
-        return Agent(
-            role="Document Question Answerer",
-            goal=dedent("""
-                If the question: "{question}" contains the phrase:
-                "Here are the relevant documents with each document separated by three dashes",
-                then you should read the pages of the documents from the question and answer the question prior to that phrase.
-            """).strip(),
-            backstory=dedent("""
-                You are an expert at reading documents and answering questions about them, and when the question includes a document,
-                you'll know you should take action to respond to it.
-            """).strip(),
-            allow_delegation=False,
-            max_iter=5,
-            verbose=self.verbose,
             llm=self.model_factory(
                 model="datarobot/azure/gpt-4o-2024-11-20",
                 use_deployment=True,
@@ -239,130 +131,68 @@ class MyAgent:
         )
 
     @property
-    def task_in_question_write(self) -> Task:
-        return Task(
-            name="Embedded Document Question Answering",
-            description=dedent("""
-                1. Check if the "{question}" contains the phrase "Here is the relevant document with each page separated by three dashes:".
-                2. If it does, separate the question from the document content.
-                3. Think and understand deeply the contents of the document part of the question.
-                4. Determine the best way to summarize this information in a concise and understandable way.
-                5. Create a summary that answers the question part of "{question}".
-                6. If the phrase is not found, respond with "No embedded document found in question."
-
-                It is extremely critical that you do your best to answer this question.
-            """).strip(),
-            expected_output="A well-written summary in markdown format that answers the question using the embedded document, or a clear statement if no embedded document is found.",
-            agent=self.document_in_question_agent,
+    def plan_generator_agent(self) -> Agent:
+        """プラン生成エージェント：3案のデートプランを生成"""
+        return Agent(
+            role="Date Plan Generator",
+            goal=(
+                "抽出された情報を基に、3つの異なるコンセプトのデートプランを生成する。"
+                "各プランは明確に異なるテーマ（雨天/室内/アクティブなど）を持つ。"
+            ),
+            backstory=(
+                "あなたはデートプランのプロデューサーです。"
+                "ユーザーの好みや制約を考慮しながら、創造的で実現可能なプランを提案します。"
+                "各スポットには必ずGoogle Maps検索URLを生成します。"
+            ),
+            allow_delegation=False,
+            verbose=self.verbose,
+            max_iter=5,
+            llm=self.model_factory(
+                model="datarobot/azure/gpt-4o-2024-11-20",
+                use_deployment=True,
+            ),
+            tools=[self.google_maps_tool, self.web_search_tool, self.image_search_tool],
         )
 
     @property
-    def knowledge_base_agent(self) -> Agent:
-        """An agent that searches through knowledge base files and answers questions using their content."""
+    def validator_agent(self) -> Agent:
+        """検証・調整エージェント：時刻の整合性を検証・調整"""
         return Agent(
-            role="Knowledge Base Specialist",
+            role="Plan Validator",
             goal=(
-                "Given a knowledge base with files and limited content previews, first identify the most relevant files "
-                'for answering the question: "{question}", then retrieve and analyze their full content to provide a comprehensive answer.'
+                "生成されたプランの時刻整合性を検証し、必要に応じて調整する。"
+                "集合時間・解散時間を厳守し、30分単位で行程を調整する。"
+                "ギャップや重複がないことを確認する。"
             ),
             backstory=(
-                "You are an expert at both analyzing file metadata and reading comprehensive document content. "
-                "You can identify the most relevant files from knowledge base systems where full content isn't immediately available, "
-                "and then synthesize information from multiple documents to provide accurate, well-sourced answers. "
-                "You have a two-step process: first analyze file previews to select relevant files, then read their full content to answer questions."
+                "あなたはプランの品質管理の専門家です。"
+                "時刻の整合性を厳密にチェックし、問題があれば自動的に修正します。"
             ),
-            allow_delegation=True,
+            allow_delegation=False,
             verbose=self.verbose,
-            max_iter=5,
+            max_iter=3,
             llm=self.model_factory(
                 model="datarobot/vertex_ai/gemini-2.5-flash",
                 use_deployment=True,
             ),
-        )
-
-    @property
-    def task_knowledge_base_file_search(self) -> Task:
-        return Task(
-            name="Knowledge Base File Search",
-            description=dedent("""
-                Analyze the knowledge base `files` provided in this JSON:
-
-                ``` {knowledge_base}```
-
-                to identify which files are most relevant for answering the question: "{question}".
-                If there is nothing in between the ``` and ``` symbols, respond with 'No knowledge base files available.'
-
-                Look at file names, metadata, the topic "{topic}", and any content previews to make your determination.
-                Select the most relevant files that would likely contain the information needed to answer the question.
-                You select them by what is assigned the 'uuid' key in the knowledge base json list of files.
-
-                DO NOT select any keys such as owner_uuid or project_uuid (these are not file UUIDs). Only the key 'uuid'.
-
-                IMPORTANT: Format your response as a clear list of UUIDs, one per line, like:
-                Selected UUIDs:
-                - [actual-uuid-from-knowledge-base]
-                - [actual-uuid-from-knowledge-base]
-
-                Only use the actual UUIDs found in the provided knowledge base data.
-            """).strip(),
-            expected_output="A clearly formatted list of the most relevant file UUIDs from the knowledge base, with each UUID on its own line, or 'No knowledge base files available.'",
-            output_pydantic=models.UUIDListOutput,
-            agent=self.knowledge_base_agent,
-        )
-
-    @property
-    def task_knowledge_base_content_answer(self) -> Task:
-        return Task(
-            description=dedent("""
-                IMPORTANT: You have previously identified relevant file UUIDs in your previous task output.
-                You must carefully examine the context from your previous task to extract these UUIDs.
-                CRITICAL: You MUST use your tool to get the content from those files
-
-                Using your full content tool is expensive, so be sure to search first using the UUIDs you found,
-                and then decide if you need to read the full content.
-
-                Your task:
-                1. Look at the output from your previous Knowledge Base File Search task
-                2. Find any lines that start with '- ' followed by a UUID in standard format
-                3. Extract ALL actual UUIDs from those lines (NOT the examples from instructions)
-                4. Search the contents of those UUIDs using keywords and/or regex patterns from the question
-                5. If you do not have UUIDs, use search to find them.
-                5. Use the search results to determine which files are most relevant from the list of UUIDs
-                6. Use the knowledge base content tool with the extracted UUIDs as a list if you think the search
-                   results weren't sufficient to answer the question properly
-                7. Read and understand the content deeply
-                8. Create a comprehensive answer to the question: "{question}" on the topic "{topic}"
-
-                CRITICAL INSTRUCTIONS:
-                - Never call the tool with an empty list
-                - Only call the tool with UUIDs you extracted from your previous output
-                - Never call the Knowledge Base Content Tool more than once!!!
-                - Ignore any example UUIDs from instructions or documentation
-                - If no UUIDs were found in your previous output, respond that no relevant files were identified
-            """).strip(),
-            expected_output="A comprehensive, well-formatted markdown summary answering the question using the knowledge base content.",
-            agent=self.knowledge_base_agent,
-            tools=[self.knowledge_base_content_tool, self.knowledge_base_search_tool],
         )
 
     @property
     def finalizer_agent(self) -> Agent:
-        """An agent that coordinates and finalizes the outputs from all other agents."""
+        """最終化エージェント：React向けJSON + Markdown要約を生成"""
         return Agent(
             role="Response Finalizer",
             goal=(
-                "Analyze the outputs from all previous agents and provide a single, coherent, well-formatted answer to the question: "
-                '"{question}" from the topic: "{topic}"'
+                "検証済みのプランをReact向けの構造化JSONとMarkdown要約に変換する。"
+                "JSONは指定されたフォーマットに厳密に準拠する。"
             ),
             backstory=(
-                "You are an expert coordinator who takes the work from multiple specialized agents "
-                "and creates a final, polished response. You can determine which agent provided the "
-                "most relevant information and synthesize multiple sources when needed. "
-                "You never output raw tool results, full documents, or incomplete information."
+                "あなたは技術的な出力フォーマットの専門家です。"
+                "指定されたJSON構造に厳密に準拠し、人間が読みやすいMarkdown要約も生成します。"
             ),
-            max_iter=5,
             allow_delegation=False,
             verbose=self.verbose,
+            max_iter=3,
             llm=self.model_factory(
                 model="datarobot/vertex_ai/gemini-2.5-flash",
                 use_deployment=True,
@@ -370,121 +200,423 @@ class MyAgent:
         )
 
     @property
-    def task_finalize_response(self) -> Task:
+    def task_parse_input(self) -> Task:
         return Task(
+            name="Parse User Input",
             description=dedent("""
-                Analyze all the outputs from the previous agents and create a single, coherent answer to: "{question}".
+                ユーザーの自然文入力から以下の必須項目を抽出してください：
 
-                You have access to:
-                1. File search results and file-based content analysis
-                2. Embedded document analysis (if present in the question)
-                3. Knowledge base search and content analysis
+                必須項目：
+                - 集合場所（例：渋谷駅、東京タワー）
+                - 集合時間（日付と時刻、例：2025-01-15 14:00）
+                - 解散場所（例：新宿駅、同じ場所）
+                - 解散時間（日付と時刻）
+                - 予算（金額、例：10000円）
+                - 人数（例：2人）
+                - 関係性（恋人/夫婦/友人など）
+                - 年齢層（例：20代、30代）
+                - 食の制約（ベジタリアン、アレルギーなど）
+                - お酒（可/不可/どちらでも）
+                - 趣味嗜好（例：アート、音楽、スポーツ）
+                - 禁止事項（自由記述）
 
-                Your job is to:
-                1. Determine which agents found relevant information
-                2. Synthesize the most relevant and accurate information
-                3. Create a well-formatted, comprehensive response
-                4. Ignore any 'not available' or 'not found' responses
-                5. If multiple sources provide information, combine them intelligently
-                6. If no sources provide useful information, clearly state that no relevant information was found
+                任意項目：
+                - 交通手段（徒歩/公共交通/車）
+                - 行動半径（例：徒歩15分圏内）
+                - 3案のラベル指定（例：「静かめ」「食べ歩き」）
+                - 雨天前提かどうか
 
-                Never output raw tool results, file paths, or technical details - only the final answer.
+                日付・時刻の補完ルール：
+                - 日付が明示されない場合：直近の未来日を採用（今日のその時刻が過ぎていれば翌日、まだなら今日）
+                - 時刻が曖昧（例：「夕方」）の場合：確認質問を生成
+                - 最終出力は YYYY-MM-DD HH:mm 形式（タイムゾーン +09:00）
+
+                出力形式：
+                - すべての必須項目が抽出できた場合：JSON形式で構造化データを返す
+                - 必須項目が不足している場合：1〜3個の確認質問をリスト形式で返す（status: needs_clarification）
+
+                入力文："{user_input}"
             """).strip(),
-            expected_output="A single, well-formatted markdown response that directly answers the user's question using the most relevant information found by all agents.",
+            expected_output=(
+                "JSON形式の構造化データ（必須項目が揃っている場合）"
+                "または確認質問のリスト（必須項目が不足している場合）"
+            ),
+            agent=self.input_parser_agent,
+        )
+
+    @property
+    def task_generate_plans(self) -> Task:
+        return Task(
+            name="Generate 3 Date Plans",
+            description=dedent("""
+                前のタスクで抽出された情報を基に、3つの異なるコンセプトのデートプランを生成してください。
+
+                必須要件：
+                1. 必ず3案を生成する
+                2. 各案は明確に異なるコンセプトを持つ（例：rainy_day、indoor_heavy、active）
+                3. ユーザーがラベル指定した場合は、そのラベルで3案を置換（ただし内容はそれに合わせる）
+                4. 各行程要素（itinerary）には必ず以下を含める：
+                   - start: YYYY-MM-DD HH:mm（30分単位）
+                   - end: YYYY-MM-DD HH:mm（30分単位）
+                   - type: meetup/move/meal/cafe/activity/shopping/rest/breakup/other
+                   - name: 場所・店名
+                   - area: エリア名
+                   - notes: 補足説明
+                   - links: {
+                       google_maps_search_url: （必須、GoogleMapsSearchUrlToolツールを使用して生成）
+                       web_search_url: （任意、WebSearchUrlToolを使用）
+                       image_search_url: （任意、ImageSearchUrlToolを使用）
+                     }
+                5. 集合時間・解散時間を厳守（最初のstartが集合時間、最後のendが解散時間）
+                6. 全行程が連続（ギャップなし/重複なし）
+
+                予算、制約、禁止事項を必ず考慮してください。
+
+                前のタスクの出力（抽出された情報）を参照してください。
+            """).strip(),
+            expected_output="3案のデートプランを含むJSON構造（各案にitinerary配列を含む）",
+            agent=self.plan_generator_agent,
+            context=[self.task_parse_input],
+        )
+
+    @property
+    def task_validate_and_adjust(self) -> Task:
+        return Task(
+            name="Validate and Adjust Plans",
+            description=dedent("""
+                前のタスクで生成されたプランの時刻整合性を検証し、必要に応じて調整してください。
+
+                検証項目：
+                1. 各案の最初のstartが集合時間と完全一致
+                2. 各案の最後のendが解散時間と完全一致
+                3. 全行程が30分単位に丸められている
+                4. ギャップや重複がない（連続している）
+
+                調整方法：
+                - 30分単位で丸める（例：14:23 → 14:30）
+                - 時間が足りない/長すぎる場合：滞在時間を伸縮、移動時間を最小固定
+                - 矛盾が解消できない場合：エラーフラグを立てる（ただし時刻を勝手にずらさない）
+
+                各案に checks オブジェクトを追加：
+                - meets_exact_time_window: true/false
+                - no_gaps_or_overlaps: true/false
+                - rounded_to_30min: true/false
+
+                前のタスクの出力（生成されたプラン）を参照してください。
+            """).strip(),
+            expected_output="検証・調整済みのプラン（checksオブジェクト付き）",
+            agent=self.validator_agent,
+            context=[self.task_generate_plans],
+        )
+
+    @property
+    def task_finalize_output(self) -> Task:
+        return Task(
+            name="Finalize Output",
+            description=dedent("""
+                前のタスクで検証済みのプランを最終的な出力形式に変換してください。
+
+                出力フォーマット（厳守）：
+                {{
+                  "status": "ok" | "needs_clarification",
+                  "clarifying_questions": ["..."],  // needs_clarification のときのみ
+                  "meta": {{
+                    "assumed_date": "YYYY-MM-DD",
+                    "timezone": "+09:00",
+                    "rounding_minutes": 30,
+                    "transport_mode": "walk"|"transit"|"car"|"unspecified",
+                    "radius_hint": "...",
+                    "meetup_time": "YYYY-MM-DD HH:mm",
+                    "breakup_time": "YYYY-MM-DD HH:mm"
+                  }},
+                  "plans": [
+                    {{
+                      "plan_id": "rainy_day",
+                      "title": "...",
+                      "theme": "...",
+                      "summary": "...",
+                      "budget_estimate_jpy": {{ "min": 0, "max": 0, "notes": "..." }},
+                      "constraints_respected": ["..."],
+                      "itinerary": [
+                        {{
+                          "start": "YYYY-MM-DD HH:mm",
+                          "end": "YYYY-MM-DD HH:mm",
+                          "type": "meetup"|"move"|"meal"|"cafe"|"activity"|"shopping"|"rest"|"breakup"|"other",
+                          "name": "...",
+                          "area": "...",
+                          "notes": "...",
+                          "links": {{
+                            "google_maps_search_url": "...",
+                            "web_search_url": "...",
+                            "image_search_url": "..."
+                          }}
+                        }}
+                      ],
+                      "checks": {{
+                        "meets_exact_time_window": true,
+                        "no_gaps_or_overlaps": true,
+                        "rounded_to_30min": true
+                      }}
+                    }}
+                  ],
+                  "markdown_summary": "..."  // 以下の見出しを含む：
+                  // ## 3つの提案
+                  // ## 比較（どれがおすすめ？）
+                  // ## 注意点（制約・禁止事項・確認事項）
+                }}
+
+                前のタスクの出力（検証済みプラン）を参照してください。
+                必ずJSON形式で出力し、markdown_summaryも含めてください。
+            """).strip(),
+            expected_output="指定フォーマットに準拠したJSON（markdown_summaryを含む）",
             agent=self.finalizer_agent,
+            context=[self.task_validate_and_adjust],
         )
 
     def crew(self) -> Crew:
         return Crew(
             agents=[
-                self.agent_file_searcher,
-                self.document_in_question_agent,
-                self.knowledge_base_agent,
+                self.input_parser_agent,
+                self.plan_generator_agent,
+                self.validator_agent,
                 self.finalizer_agent,
             ],
             tasks=[
-                self.task_file_search,
-                self.task_write,
-                self.task_in_question_write,
-                self.task_knowledge_base_file_search,
-                self.task_knowledge_base_content_answer,
-                self.task_finalize_response,
+                self.task_parse_input,
+                self.task_generate_plans,
+                self.task_validate_and_adjust,
+                self.task_finalize_output,
             ],
             verbose=self.verbose,
         )
 
-    def _extract_and_store_knowledge_base_content(self, base: dict[str, Any]) -> None:
-        """Extracts and stores the encoded content from knowledge base files."""
-        for file_info in base["files"]:
-            file_uuid = file_info["uuid"]
-            if "encoded_content" in file_info:
-                if not file_info["encoded_content"]:
-                    # This shouldn't happen in prod, but if you don't have libreoffice installed,
-                    # or persistence of the KB is missing it can happen.
-                    continue
-                self.knowledge_base_files[file_uuid] = file_info["encoded_content"]
-                del file_info[
-                    "encoded_content"
-                ]  # Remove encoded_content from working inputs
-                file_info["encoded_content"] = self.knowledge_base_files[file_uuid].get(
-                    "1", ""
-                )[:500]  # preview
+    def _round_to_30min(self, dt: datetime) -> datetime:
+        """時刻を30分単位に丸める"""
+        minutes = dt.minute
+        if minutes < 15:
+            rounded_minutes = 0
+        elif minutes < 45:
+            rounded_minutes = 30
+        else:
+            rounded_minutes = 0
+            dt = dt + timedelta(hours=1)
+        return dt.replace(minute=rounded_minutes, second=0, microsecond=0)
+
+    def _parse_datetime(self, time_str: str, assumed_date: Optional[datetime] = None) -> Optional[datetime]:
+        """日時文字列を解析（補完あり）"""
+        if assumed_date is None:
+            now = datetime.now()
+            # タイムゾーンを考慮（+09:00想定）
+            assumed_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+        # 既に完全な形式の場合
+        try:
+            dt = datetime.strptime(time_str, "%Y-%m-%d %H:%M")
+            return self._round_to_30min(dt)
+        except ValueError:
+            pass
+
+        # 時刻のみの場合（例：14:00）
+        try:
+            hour, minute = map(int, time_str.split(":"))
+            dt = assumed_date.replace(hour=hour, minute=minute)
+            # 今日のその時刻が過ぎていれば翌日
+            if dt < datetime.now():
+                dt = dt + timedelta(days=1)
+            return self._round_to_30min(dt)
+        except ValueError:
+            pass
+
+        return None
+
+    def _validate_itinerary(self, plan: Dict[str, Any], meetup_time: str, breakup_time: str) -> Dict[str, Any]:
+        """行程の時刻整合性を検証・調整"""
+        try:
+            meetup_dt = datetime.strptime(meetup_time, "%Y-%m-%d %H:%M")
+            breakup_dt = datetime.strptime(breakup_time, "%Y-%m-%d %H:%M")
+        except ValueError:
+            plan["checks"] = {
+                "meets_exact_time_window": False,
+                "no_gaps_or_overlaps": False,
+                "rounded_to_30min": False,
+            }
+            return plan
+
+        itinerary = plan.get("itinerary", [])
+        if not itinerary:
+            plan["checks"] = {
+                "meets_exact_time_window": False,
+                "no_gaps_or_overlaps": False,
+                "rounded_to_30min": False,
+            }
+            return plan
+
+        # 集合・解散時刻と一致させる
+        itinerary[0]["start"] = meetup_time
+        itinerary[-1]["end"] = breakup_time
+
+        # 全行程を30分単位に丸め、連続させる
+        current_time = meetup_dt
+        total_duration = (breakup_dt - meetup_dt).total_seconds() / 60  # 分単位
+        
+        # 各行程の最小時間を計算（移動時間を考慮）
+        min_durations = []
+        for i, item in enumerate(itinerary):
+            item_type = item.get("type", "other")
+            # 移動時間の見積もり（分）
+            if item_type == "move":
+                min_dur = 15  # 最小移動時間15分
+            elif item_type in ["meetup", "breakup"]:
+                min_dur = 0  # 集合・解散は時間不要
+            else:
+                min_dur = 30  # その他は最小30分
+            min_durations.append(min_dur)
+        
+        # 利用可能な時間を計算（最小時間を除いた残り）
+        total_min_duration = sum(min_durations)
+        available_time = max(0, total_duration - total_min_duration)
+        
+        # 各行程に時間を配分（最初と最後は固定）
+        for i, item in enumerate(itinerary):
+            item_type = item.get("type", "other")
+            
+            if i == 0:
+                # 最初の行程：集合時刻から開始
+                item["start"] = meetup_time
+                item_start = meetup_dt
+            else:
+                # 前の行程の終了時刻から開始
+                item["start"] = current_time.strftime("%Y-%m-%d %H:%M")
+                item_start = current_time
+            
+            if i == len(itinerary) - 1:
+                # 最後の行程：解散時刻で終了
+                item["end"] = breakup_time
+                current_time = breakup_dt
+            else:
+                # 中間の行程：最小時間 + 配分時間
+                min_dur = min_durations[i]
+                if item_type in ["meetup", "breakup"]:
+                    item_end = item_start
+                elif item_type == "move":
+                    item_end = item_start + timedelta(minutes=min_dur)
+                else:
+                    # 利用可能時間を配分（最後の行程以外に均等配分）
+                    if available_time > 0 and len(itinerary) > 2:
+                        allocated_time = max(min_dur, available_time / (len(itinerary) - 2))
+                    else:
+                        allocated_time = min_dur
+                    item_end = item_start + timedelta(minutes=int(allocated_time))
+                    item_end = self._round_to_30min(item_end)
+                
+                item["end"] = item_end.strftime("%Y-%m-%d %H:%M")
+                current_time = item_end
+
+        # 検証フラグを設定
+        final_start = datetime.strptime(itinerary[0]["start"], "%Y-%m-%d %H:%M")
+        final_end = datetime.strptime(itinerary[-1]["end"], "%Y-%m-%d %H:%M")
+        
+        # ギャップ・重複チェック
+        no_gaps = True
+        for i in range(len(itinerary) - 1):
+            current_end = datetime.strptime(itinerary[i]["end"], "%Y-%m-%d %H:%M")
+            next_start = datetime.strptime(itinerary[i + 1]["start"], "%Y-%m-%d %H:%M")
+            if current_end != next_start:
+                no_gaps = False
+                break
+
+        plan["checks"] = {
+            "meets_exact_time_window": (
+                final_start.strftime("%Y-%m-%d %H:%M") == meetup_time
+                and final_end.strftime("%Y-%m-%d %H:%M") == breakup_time
+            ),
+            "no_gaps_or_overlaps": no_gaps,
+            "rounded_to_30min": True,
+        }
+
+        return plan
 
     def run(
         self, completion_create_params: CompletionCreateParams
     ) -> tuple[CrewOutput, list[Any]]:
-        """Run the agent with the provided completion parameters.
-
-        [THIS METHOD IS REQUIRED FOR THE AGENT TO WORK WITH DRUM SERVER]
-
-        Inputs can be extracted from the completion_create_params in several ways. A helper function
-        `create_inputs_from_completion_params` is provided to extract the inputs as json or a string
-        from the 'user' portion of the input prompt. Alternatively you can extract and use one or
-        more inputs or messages from the completion_create_params["messages"] field.
-
-        Args:
-            completion_create_params (CompletionCreateParams): The parameters for
-                the completion request, which includes the input topic and other settings.
-        Returns:
-            tuple[CrewOutput, list[Any]]: A tuple containing a list of messages (events) and the crew output.
-
-        """
-        # Example helper for extracting inputs as a json from the completion_create_params["messages"]
-        # field with the 'user' role: (e.g. {"topic": "Artificial Intelligence"})
+        """Run the agent with the provided completion parameters."""
+        # ユーザー入力を取得
         inputs = create_inputs_from_completion_params(completion_create_params)
-        # If inputs are a string, convert to a dictionary with 'topic' key for this example.
         if isinstance(inputs, str):
-            inputs = {"topic": inputs}
-
-        # If you want to use the inputs for training, you can uncomment this
-        #
-        # with open("agent_inputs.json", "w") as f:
-        #     json.dump(inputs, f, indent=4)
-
-        # Handle knowledge base content extraction and storage
-        if "knowledge_base" in inputs:
-            # Extract and store encoded_content, remove from working inputs
-            self._extract_and_store_knowledge_base_content(inputs["knowledge_base"])
-            self.knowledge_base_content_tool.knowledge_base = self.knowledge_base_files
-            inputs["topic"] = inputs["knowledge_base"]["description"]
+            user_input = inputs
+        elif isinstance(inputs, dict):
+            user_input = inputs.get("user_input", inputs.get("message", str(inputs)))
         else:
-            inputs["knowledge_base"] = ""
-        # Print commands may need flush=True to ensure they are displayed in real-time.
-        print("Running agent with inputs:", flush=True)
-        print(json.dumps(inputs, indent=4), flush=True)
+            user_input = str(inputs)
 
+        print("Running date plan agent with input:", flush=True)
+        print(user_input, flush=True)
+
+        # CrewAIで処理
         crew = self.crew()
-        # Check if we are using training data
-        output = crew.agents[0]._use_trained_data(".")
-        if len(output) > 1:
-            print("Using training data.", flush=True)
-        # Run the crew with the inputs
-        crew_output = crew.kickoff(inputs=inputs)
+        crew_output = crew.kickoff(inputs={"user_input": user_input})
 
-        # Extract the response text from the crew output
+        # レスポンステキストを取得
         response_text = str(crew_output.raw)
 
-        # Create a list of events from the event listener
+        # JSONを抽出・検証・調整
+        try:
+            # JSON部分を抽出（マークダウンコードブロック内の可能性も考慮）
+            json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', response_text, re.DOTALL)
+            if not json_match:
+                json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
+            
+            if json_match:
+                json_str = json_match.group(1) if json_match.groups() else json_match.group()
+                parsed_json = json.loads(json_str)
+                
+                # 時刻検証を実行（plansが存在する場合）
+                if parsed_json.get("status") == "ok" and "plans" in parsed_json:
+                    # メタ情報から時刻を取得、または最初のプランから推測
+                    meta = parsed_json.get("meta", {})
+                    meetup_time = meta.get("meetup_time")
+                    breakup_time = meta.get("breakup_time")
+                    
+                    # メタにない場合は最初のプランから取得
+                    if not meetup_time and parsed_json["plans"]:
+                        first_plan = parsed_json["plans"][0]
+                        if first_plan.get("itinerary"):
+                            meetup_time = first_plan["itinerary"][0].get("start")
+                    
+                    if not breakup_time and parsed_json["plans"]:
+                        first_plan = parsed_json["plans"][0]
+                        if first_plan.get("itinerary"):
+                            breakup_time = first_plan["itinerary"][-1].get("end")
+                    
+                    if meetup_time and breakup_time:
+                        for plan in parsed_json["plans"]:
+                            plan = self._validate_itinerary(plan, meetup_time, breakup_time)
+                        
+                        # メタ情報を更新
+                        if "meetup_time" not in meta:
+                            meta["meetup_time"] = meetup_time
+                        if "breakup_time" not in meta:
+                            meta["breakup_time"] = breakup_time
+                        parsed_json["meta"] = meta
+                    
+                    # 最終的なJSONを再構築（Markdown要約も含める）
+                    json_output = json.dumps(parsed_json, ensure_ascii=False, indent=2)
+                    
+                    # Markdown要約が既にある場合はそのまま、ない場合は生成
+                    if "markdown_summary" not in parsed_json or not parsed_json["markdown_summary"]:
+                        markdown = self._generate_markdown_summary(parsed_json)
+                        parsed_json["markdown_summary"] = markdown
+                        json_output = json.dumps(parsed_json, ensure_ascii=False, indent=2)
+                    
+                    # 最終出力：JSON + Markdown（両方を含む）
+                    response_text = f"{json_output}\n\n---\n\n{parsed_json.get('markdown_summary', '')}"
+                    
+        except (json.JSONDecodeError, KeyError, AttributeError) as e:
+            if self.verbose:
+                print(f"JSON parsing/validation error: {e}", flush=True)
+            # エラー時は元のレスポンスをそのまま返す
+
+        # イベントリストを作成
         events = self.event_listener.messages
         if len(events) > 0:
             last_message = events[-1].content
@@ -492,9 +624,42 @@ class MyAgent:
                 events.append(AIMessage(content=response_text))
         else:
             events = None
-        # The `events` variable is used to compute agentic metrics
-        # (e.g. Task Adherence, Agent Goal Accuracy, Agent Goal Accuracy with Reference,
-        # Tool Call Accuracy).
-        # If you are not interested in these metrics, you can also return None instead.
-        # This will reduce the size of the response significantly.
+
+        # CrewOutputを再構築（検証済みのresponse_textを使用）
+        crew_output.raw = response_text
+
         return crew_output, events
+
+    def _generate_markdown_summary(self, parsed_json: Dict[str, Any]) -> str:
+        """Markdown要約を生成"""
+        plans = parsed_json.get("plans", [])
+        if not plans:
+            return "## エラー\nプランが生成されませんでした。"
+        
+        markdown = "## 3つの提案\n\n"
+        for plan in plans:
+            title = plan.get("title", plan.get("plan_id", "プラン"))
+            theme = plan.get("theme", "")
+            summary = plan.get("summary", "")
+            markdown += f"### {title}\n"
+            if theme:
+                markdown += f"**テーマ**: {theme}\n\n"
+            if summary:
+                markdown += f"{summary}\n\n"
+        
+        markdown += "## 比較（どれがおすすめ？）\n\n"
+        markdown += "各プランの特徴を比較して、あなたの好みに合ったものを選んでください。\n\n"
+        
+        markdown += "## 注意点（制約・禁止事項・確認事項）\n\n"
+        constraints = []
+        for plan in plans:
+            plan_constraints = plan.get("constraints_respected", [])
+            constraints.extend(plan_constraints)
+        
+        if constraints:
+            for constraint in set(constraints):  # 重複除去
+                markdown += f"- {constraint}\n"
+        else:
+            markdown += "- 特に制約はありません。\n"
+        
+        return markdown
