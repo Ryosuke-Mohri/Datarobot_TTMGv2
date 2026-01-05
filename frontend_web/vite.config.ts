@@ -61,7 +61,7 @@ export default defineConfig({
                     return rewritten;
                 },
                 configure: (proxy, _options) => {
-                    proxy.on('error', (err, _req, res) => {
+                    proxy.on('error', (err, _req, _res) => {
                         console.error('[Vite Proxy Error]', err);
                     });
                     proxy.on('proxyReq', (proxyReq, req, _res) => {

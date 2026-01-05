@@ -25,7 +25,9 @@ apiClient.interceptors.request.use(
     config => {
         if (import.meta.env.DEV) {
             console.log('[API Request]', config.method?.toUpperCase(), config.url);
-            console.log('[API Request] Full URL:', config.baseURL + config.url);
+            const baseURL = config.baseURL || '';
+            const url = config.url || '';
+            console.log('[API Request] Full URL:', baseURL + url);
         }
         return config;
     },
@@ -42,7 +44,9 @@ apiClient.interceptors.response.use(
         if (import.meta.env.DEV) {
             console.error('[API Response Error]', error.response?.status, error.response?.statusText);
             console.error('[API Response Error] URL:', error.config?.url);
-            console.error('[API Response Error] Full URL:', error.config?.baseURL + error.config?.url);
+            const baseURL = error.config?.baseURL || '';
+            const url = error.config?.url || '';
+            console.error('[API Response Error] Full URL:', baseURL + url);
         }
         return Promise.reject(error);
     }
