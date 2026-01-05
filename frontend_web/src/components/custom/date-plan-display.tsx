@@ -297,9 +297,10 @@ export function DatePlanDisplay({ data }: DatePlanDisplayProps) {
                                                                 target="_blank"
                                                                 rel="noopener noreferrer"
                                                                 className="inline-flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 hover:underline"
+                                                                title="Google Mapsで開く"
                                                             >
                                                                 <MapPin className="h-3 w-3" />
-                                                                Google Maps
+                                                                LINK
                                                                 <ExternalLink className="h-3 w-3" />
                                                             </a>
                                                         )}
@@ -309,8 +310,9 @@ export function DatePlanDisplay({ data }: DatePlanDisplayProps) {
                                                                 target="_blank"
                                                                 rel="noopener noreferrer"
                                                                 className="inline-flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 hover:underline"
+                                                                title="Web検索で開く"
                                                             >
-                                                                検索
+                                                                LINK
                                                                 <ExternalLink className="h-3 w-3" />
                                                             </a>
                                                         )}
@@ -320,8 +322,9 @@ export function DatePlanDisplay({ data }: DatePlanDisplayProps) {
                                                                 target="_blank"
                                                                 rel="noopener noreferrer"
                                                                 className="inline-flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 hover:underline"
+                                                                title="画像検索で開く"
                                                             >
-                                                                画像
+                                                                LINK
                                                                 <ExternalLink className="h-3 w-3" />
                                                             </a>
                                                         )}
