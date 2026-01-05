@@ -10,7 +10,7 @@ import { DotPulseLoader } from '@/components/custom/dot-pulse-loader';
 import { MarkdownHooks } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeMermaid from 'rehype-mermaid';
-import { DatePlanDisplay, DatePlanData } from './date-plan-display';
+import { DatePlanDisplay, DatePlanData, DatePlan } from './date-plan-display';
 
 function tryParseDatePlanJson(content: string): DatePlanData | null {
     if (!content || typeof content !== 'string') {
@@ -83,7 +83,9 @@ function tryParseDatePlanJson(content: string): DatePlanData | null {
                     status: parsedObj.status!,
                     clarifying_questions: parsedObj.clarifying_questions,
                     meta: parsedObj.meta,
-                    plans: Array.isArray(parsedObj.plans) ? parsedObj.plans : [],
+                    plans: Array.isArray(parsedObj.plans)
+                        ? (parsedObj.plans as DatePlan[])
+                        : [],
                     markdown_summary: parsedObj.markdown_summary,
                 };
                 return result;

@@ -17,7 +17,7 @@ interface DatePlanItineraryItem {
     links: DatePlanLinks;
 }
 
-interface DatePlan {
+export interface DatePlan {
     plan_id: string;
     title: string;
     theme: string;
