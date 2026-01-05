@@ -10,14 +10,9 @@ import { DotPulseLoader } from '@/components/custom/dot-pulse-loader';
 import { MarkdownHooks } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeMermaid from 'rehype-mermaid';
-import { DatePlanDisplay } from './date-plan-display';
+import { DatePlanDisplay, DatePlanData } from './date-plan-display';
 
-function tryParseDatePlanJson(content: string): {
-    status: 'ok' | 'needs_clarification';
-    clarifying_questions?: string[];
-    plans?: unknown[];
-    markdown_summary?: string;
-} | null {
+function tryParseDatePlanJson(content: string): DatePlanData | null {
     if (!content || typeof content !== 'string') {
         return null;
     }
@@ -81,7 +76,12 @@ function tryParseDatePlanJson(content: string): {
                 (parsed.status === 'ok' || parsed.status === 'needs_clarification') &&
                 (parsed.plans || parsed.clarifying_questions)
             ) {
-                return parsed;
+                // plansが存在しない場合は空配列を設定
+                const result: DatePlanData = {
+                    ...parsed,
+                    plans: parsed.plans || [],
+                };
+                return result;
             }
         }
     } catch (e) {

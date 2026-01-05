@@ -36,7 +36,7 @@ interface DatePlan {
     };
 }
 
-interface DatePlanData {
+export interface DatePlanData {
     status: 'ok' | 'needs_clarification';
     clarifying_questions?: string[];
     meta?: {
