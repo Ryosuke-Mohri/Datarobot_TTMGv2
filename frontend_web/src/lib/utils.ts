@@ -25,6 +25,11 @@ export function getBaseUrl() {
 }
 
 export function getApiUrl() {
+    // 開発環境では、Viteのプロキシを使用するため相対パスを返す
+    if (import.meta.env.DEV) {
+        return `${getBaseUrl()}api`;
+    }
+    // 本番環境では、フルURLを返す
     return `${window.location.origin}${getBaseUrl()}api`;
 }
 
