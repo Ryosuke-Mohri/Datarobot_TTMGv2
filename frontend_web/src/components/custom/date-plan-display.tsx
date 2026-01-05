@@ -167,10 +167,10 @@ export function DatePlanDisplay({ data }: DatePlanDisplayProps) {
                                         {data.meta.transport_mode === 'walk'
                                             ? '徒歩'
                                             : data.meta.transport_mode === 'transit'
-                                              ? '公共交通'
-                                              : data.meta.transport_mode === 'car'
-                                                ? '車'
-                                                : data.meta.transport_mode}
+                                            ? '公共交通'
+                                            : data.meta.transport_mode === 'car'
+                                            ? '車'
+                                            : data.meta.transport_mode}
                                     </div>
                                 </div>
                             </div>

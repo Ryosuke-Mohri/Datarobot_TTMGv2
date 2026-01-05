@@ -16,21 +16,21 @@ function tryParseDatePlanJson(content: string): any {
     if (!content || typeof content !== 'string') {
         return null;
     }
-    
+
     try {
         // 1. マークダウンコードブロック内のJSONを検出（最優先）
         let jsonMatch = content.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/);
-        
+
         // 2. "json {" で始まる形式を検出（エージェントが直接出力した場合）
         if (!jsonMatch) {
             jsonMatch = content.match(/^json\s+(\{[\s\S]*\})/m);
         }
-        
+
         // 3. 行頭の "json " を除いたJSONオブジェクトを検出
         if (!jsonMatch) {
             jsonMatch = content.match(/^json\s+(\{[\s\S]*\})/m);
         }
-        
+
         // 4. 単純なJSONオブジェクトを検出（最後の手段）
         if (!jsonMatch) {
             // 最初の { から最後の } までを抽出（ネストされたJSONに対応）
@@ -51,13 +51,13 @@ function tryParseDatePlanJson(content: string): any {
                 }
             }
         }
-        
+
         if (jsonMatch) {
             let jsonStr = jsonMatch[1] || jsonMatch[0];
-            
+
             // JSON文字列をクリーンアップ
             jsonStr = jsonStr.trim();
-            
+
             // 不完全なJSONの場合、最後の } までを探す
             if (!jsonStr.endsWith('}')) {
                 const lastBraceIndex = jsonStr.lastIndexOf('}');
@@ -65,9 +65,9 @@ function tryParseDatePlanJson(content: string): any {
                     jsonStr = jsonStr.substring(0, lastBraceIndex + 1);
                 }
             }
-            
+
             const parsed = JSON.parse(jsonStr);
-            
+
             // デートプランのJSONかどうかを判定
             if (
                 parsed &&
@@ -95,10 +95,10 @@ export function ChatResponseMessage({
     const { availableLlmModels } = useAppState();
     const messageLlmModel =
         message && availableLlmModels?.find(({ model }) => model === message.model);
-    
+
     // デートプランのJSONを検出
     const datePlanData = message.content ? tryParseDatePlanJson(message.content) : null;
-    
+
     return (
         <div className="my-3 py-3" data-testid="chat-response-message">
             <div className={cn('w-2xl px-3 flex gap-2 items-center', classNames)}>
