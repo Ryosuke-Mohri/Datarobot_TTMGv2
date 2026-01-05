@@ -189,3 +189,4 @@ package-lock.json
 # Pulumi output from the latest stack apply
 pulumi_config.json
 
+.pulumi/
