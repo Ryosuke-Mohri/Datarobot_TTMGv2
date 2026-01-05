@@ -47,7 +47,8 @@ function tryParseDatePlanJson(content: string): any {
                     }
                 }
                 if (endIndex > startIndex) {
-                    jsonMatch = [content.substring(startIndex, endIndex + 1), content.substring(startIndex, endIndex + 1)];
+                    const jsonSubstring = content.substring(startIndex, endIndex + 1);
+                    jsonMatch = [jsonSubstring, jsonSubstring];
                 }
             }
         }
