@@ -32,7 +32,7 @@ from tool import (
 
 class MyAgent:
     """デートプラン提案エージェント
-    
+
     ユーザーの自然文入力から必須項目を抽出し、3案のデートプランを生成します。
     集合時間・解散時間を厳守し、30分単位で行程を調整します。
     """
@@ -460,7 +460,9 @@ class MyAgent:
             dt = dt + timedelta(hours=1)
         return dt.replace(minute=rounded_minutes, second=0, microsecond=0)
 
-    def _parse_datetime(self, time_str: str, assumed_date: Optional[datetime] = None) -> Optional[datetime]:
+    def _parse_datetime(
+        self, time_str: str, assumed_date: Optional[datetime] = None
+    ) -> Optional[datetime]:
         """日時文字列を解析（補完あり）"""
         if assumed_date is None:
             now = datetime.now()
@@ -487,7 +489,9 @@ class MyAgent:
 
         return None
 
-    def _validate_itinerary(self, plan: Dict[str, Any], meetup_time: str, breakup_time: str) -> Dict[str, Any]:
+    def _validate_itinerary(
+        self, plan: Dict[str, Any], meetup_time: str, breakup_time: str
+    ) -> Dict[str, Any]:
         """行程の時刻整合性を検証・調整"""
         try:
             meetup_dt = datetime.strptime(meetup_time, "%Y-%m-%d %H:%M")
@@ -516,7 +520,7 @@ class MyAgent:
         # 全行程を30分単位に丸め、連続させる
         current_time = meetup_dt
         total_duration = (breakup_dt - meetup_dt).total_seconds() / 60  # 分単位
-        
+
         # 各行程の最小時間を計算（移動時間を考慮）
         min_durations = []
         for i, item in enumerate(itinerary):
@@ -529,15 +533,15 @@ class MyAgent:
             else:
                 min_dur = 30  # その他は最小30分
             min_durations.append(min_dur)
-        
+
         # 利用可能な時間を計算（最小時間を除いた残り）
         total_min_duration = sum(min_durations)
         available_time = max(0, total_duration - total_min_duration)
-        
+
         # 各行程に時間を配分（最初と最後は固定）
         for i, item in enumerate(itinerary):
             item_type = item.get("type", "other")
-            
+
             if i == 0:
                 # 最初の行程：集合時刻から開始
                 item["start"] = meetup_time
@@ -546,7 +550,7 @@ class MyAgent:
                 # 前の行程の終了時刻から開始
                 item["start"] = current_time.strftime("%Y-%m-%d %H:%M")
                 item_start = current_time
-            
+
             if i == len(itinerary) - 1:
                 # 最後の行程：解散時刻で終了
                 item["end"] = breakup_time
@@ -561,19 +565,21 @@ class MyAgent:
                 else:
                     # 利用可能時間を配分（最後の行程以外に均等配分）
                     if available_time > 0 and len(itinerary) > 2:
-                        allocated_time = max(min_dur, available_time / (len(itinerary) - 2))
+                        allocated_time = max(
+                            min_dur, available_time / (len(itinerary) - 2)
+                        )
                     else:
                         allocated_time = min_dur
                     item_end = item_start + timedelta(minutes=int(allocated_time))
                     item_end = self._round_to_30min(item_end)
-                
+
                 item["end"] = item_end.strftime("%Y-%m-%d %H:%M")
                 current_time = item_end
 
         # 検証フラグを設定
         final_start = datetime.strptime(itinerary[0]["start"], "%Y-%m-%d %H:%M")
         final_end = datetime.strptime(itinerary[-1]["end"], "%Y-%m-%d %H:%M")
-        
+
         # ギャップ・重複チェック
         no_gaps = True
         for i in range(len(itinerary) - 1):
@@ -620,69 +626,77 @@ class MyAgent:
         # JSONを抽出・検証・調整
         try:
             # JSON部分を抽出（マークダウンコードブロック内の可能性も考慮）
-            json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', response_text, re.DOTALL)
+            json_match = re.search(
+                r"```(?:json)?\s*(\{.*?\})\s*```", response_text, re.DOTALL
+            )
             if not json_match:
                 # "json {" で始まる形式も検出
-                json_match = re.search(r'json\s+(\{.*?\})', response_text, re.DOTALL)
+                json_match = re.search(r"json\s+(\{.*?\})", response_text, re.DOTALL)
             if not json_match:
                 # 単純なJSONオブジェクトを検出
-                json_match = re.search(r'(\{.*\})', response_text, re.DOTALL)
-            
+                json_match = re.search(r"(\{.*\})", response_text, re.DOTALL)
+
             if json_match:
-                json_str = json_match.group(1) if json_match.groups() else json_match.group()
+                json_str = (
+                    json_match.group(1) if json_match.groups() else json_match.group()
+                )
                 # 不完全なJSONの場合、最後の } までを探す
-                if not json_str.strip().endswith('}'):
-                    last_brace = json_str.rfind('}')
+                if not json_str.strip().endswith("}"):
+                    last_brace = json_str.rfind("}")
                     if last_brace > 0:
-                        json_str = json_str[:last_brace + 1]
+                        json_str = json_str[: last_brace + 1]
                 parsed_json = json.loads(json_str)
-                
+
                 # 時刻検証を実行（plansが存在する場合）
                 if parsed_json.get("status") == "ok" and "plans" in parsed_json:
                     # メタ情報から時刻を取得、または最初のプランから推測
                     meta = parsed_json.get("meta", {})
                     meetup_time = meta.get("meetup_time")
                     breakup_time = meta.get("breakup_time")
-                    
+
                     # メタにない場合は最初のプランから取得
                     if not meetup_time and parsed_json["plans"]:
                         first_plan = parsed_json["plans"][0]
                         if first_plan.get("itinerary"):
                             meetup_time = first_plan["itinerary"][0].get("start")
-                    
+
                     if not breakup_time and parsed_json["plans"]:
                         first_plan = parsed_json["plans"][0]
                         if first_plan.get("itinerary"):
                             breakup_time = first_plan["itinerary"][-1].get("end")
-                    
+
                     if meetup_time and breakup_time:
                         for plan in parsed_json["plans"]:
-                            plan = self._validate_itinerary(plan, meetup_time, breakup_time)
-                        
+                            plan = self._validate_itinerary(
+                                plan, meetup_time, breakup_time
+                            )
+
                         # メタ情報を更新
                         if "meetup_time" not in meta:
                             meta["meetup_time"] = meetup_time
                         if "breakup_time" not in meta:
                             meta["breakup_time"] = breakup_time
                         parsed_json["meta"] = meta
-                    
+
                     # Markdown要約が既にある場合はそのまま、ない場合は生成
-                    if "markdown_summary" not in parsed_json or not parsed_json["markdown_summary"]:
+                    if (
+                        "markdown_summary" not in parsed_json
+                        or not parsed_json["markdown_summary"]
+                    ):
                         markdown = self._generate_markdown_summary(parsed_json)
                         parsed_json["markdown_summary"] = markdown
-                    
+
                     # 最終的なJSONを再構築
                     json_output = json.dumps(parsed_json, ensure_ascii=False, indent=2)
-                    
+
                     # 最終出力：JSONをコードブロックで含める（Markdown要約はJSON内に含まれている）
                     # フロントエンドがJSONを検出しやすいように、確実にコードブロック形式で出力
                     response_text = f"```json\n{json_output}\n```"
-                    
+
                     # Markdown要約も追加（JSONの後に）
-                    markdown_summary = parsed_json.get('markdown_summary', '')
+                    markdown_summary = parsed_json.get("markdown_summary", "")
                     if markdown_summary:
                         response_text = f"{response_text}\n\n{markdown_summary}"
-                    
         except (json.JSONDecodeError, KeyError, AttributeError) as e:
             if self.verbose:
                 print(f"JSON parsing/validation error: {e}", flush=True)
@@ -707,7 +721,7 @@ class MyAgent:
         plans = parsed_json.get("plans", [])
         if not plans:
             return "## エラー\nプランが生成されませんでした。"
-        
+
         markdown = "## 3つの提案\n\n"
         for plan in plans:
             title = plan.get("title", plan.get("plan_id", "プラン"))
@@ -718,16 +732,18 @@ class MyAgent:
                 markdown += f"**テーマ**: {theme}\n\n"
             if summary:
                 markdown += f"{summary}\n\n"
-        
+
         markdown += "## 比較（どれがおすすめ？）\n\n"
-        markdown += "各プランの特徴を比較して、あなたの好みに合ったものを選んでください。\n\n"
-        
+        markdown += (
+            "各プランの特徴を比較して、あなたの好みに合ったものを選んでください。\n\n"
+        )
+
         markdown += "## 注意点（制約・禁止事項・確認事項）\n\n"
         constraints = []
         for plan in plans:
             plan_constraints = plan.get("constraints_respected", [])
             constraints.extend(plan_constraints)
-        
+
         if constraints:
             for constraint in set(constraints):  # 重複除去
                 markdown += f"- {constraint}\n"

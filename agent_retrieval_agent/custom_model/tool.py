@@ -322,7 +322,10 @@ class KnowledgeBaseSearchTool(BaseTool):  # type: ignore[misc]
 
 
 class GoogleMapsSearchUrlToolSchema(BaseModel):
-    query: str = Field(..., description="場所名や住所などの検索クエリ（例: '渋谷駅' または '東京タワー'）")
+    query: str = Field(
+        ...,
+        description="場所名や住所などの検索クエリ（例: '渋谷駅' または '東京タワー'）",
+    )
 
 
 class GoogleMapsSearchUrlTool(BaseTool):  # type: ignore[misc]
