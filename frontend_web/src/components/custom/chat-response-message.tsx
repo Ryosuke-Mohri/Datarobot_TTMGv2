@@ -12,7 +12,12 @@ import remarkGfm from 'remark-gfm';
 import rehypeMermaid from 'rehype-mermaid';
 import { DatePlanDisplay } from './date-plan-display';
 
-function tryParseDatePlanJson(content: string): any {
+function tryParseDatePlanJson(content: string): {
+    status: 'ok' | 'needs_clarification';
+    clarifying_questions?: string[];
+    plans?: unknown[];
+    markdown_summary?: string;
+} | null {
     if (!content || typeof content !== 'string') {
         return null;
     }
