@@ -45,10 +45,29 @@ export default defineConfig({
         host: true,
         allowedHosts: ['localhost', '127.0.0.1', '.datarobot.com', '.drdev.io'],
         proxy: {
-            [`${proxyBase}api/`]: {
+            // プロキシ設定: /notebook-sessions/.../ports/5173/api/ を http://localhost:8080/api/ にプロキシ
+            [`${proxyBase}api`]: {
                 target: 'http://localhost:8080',
                 changeOrigin: true,
-                rewrite: path => path.replace(new RegExp(`^${proxyBase}`), ''),
+                rewrite: path => {
+                    // /notebook-sessions/.../ports/5173/api/v1/chat → /api/v1/chat
+                    const baseWithoutSlash = proxyBase.replace(/\/$/, '');
+                    // 正規表現で特殊文字をエスケープ
+                    const escapedBase = baseWithoutSlash.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                    const rewritten = path.replace(new RegExp(`^${escapedBase}/api`), '/api');
+                    if (process.env.NODE_ENV === 'development') {
+                        console.log('[Vite Proxy] Rewriting:', path, '→', rewritten);
+                    }
+                    return rewritten;
+                },
+                configure: (proxy, _options) => {
+                    proxy.on('error', (err, _req, res) => {
+                        console.error('[Vite Proxy Error]', err);
+                    });
+                    proxy.on('proxyReq', (proxyReq, req, _res) => {
+                        console.log('[Vite Proxy] Proxying:', req.url, '→', proxyReq.path);
+                    });
+                },
             },
         },
     },
