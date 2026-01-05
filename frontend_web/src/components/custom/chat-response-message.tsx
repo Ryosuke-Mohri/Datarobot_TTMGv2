@@ -10,93 +10,6 @@ import { DotPulseLoader } from '@/components/custom/dot-pulse-loader';
 import { MarkdownHooks } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeMermaid from 'rehype-mermaid';
-import { DatePlanDisplay, DatePlanData, DatePlan } from './date-plan-display';
-
-function tryParseDatePlanJson(content: string): DatePlanData | null {
-    if (!content || typeof content !== 'string') {
-        return null;
-    }
-
-    try {
-        // 1. マークダウンコードブロック内のJSONを検出（最優先）
-        let jsonMatch = content.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/);
-
-        // 2. "json {" で始まる形式を検出（エージェントが直接出力した場合）
-        if (!jsonMatch) {
-            jsonMatch = content.match(/^json\s+(\{[\s\S]*\})/m);
-        }
-
-        // 3. 行頭の "json " を除いたJSONオブジェクトを検出
-        if (!jsonMatch) {
-            jsonMatch = content.match(/^json\s+(\{[\s\S]*\})/m);
-        }
-
-        // 4. 単純なJSONオブジェクトを検出（最後の手段）
-        if (!jsonMatch) {
-            // 最初の { から最後の } までを抽出（ネストされたJSONに対応）
-            const startIndex = content.indexOf('{');
-            if (startIndex !== -1) {
-                let braceCount = 0;
-                let endIndex = startIndex;
-                for (let i = startIndex; i < content.length; i++) {
-                    if (content[i] === '{') braceCount++;
-                    if (content[i] === '}') braceCount--;
-                    if (braceCount === 0) {
-                        endIndex = i;
-                        break;
-                    }
-                }
-                if (endIndex > startIndex) {
-                    const jsonSubstring = content.substring(startIndex, endIndex + 1);
-                    jsonMatch = [jsonSubstring, jsonSubstring];
-                }
-            }
-        }
-
-        if (jsonMatch) {
-            let jsonStr = jsonMatch[1] || jsonMatch[0];
-
-            // JSON文字列をクリーンアップ
-            jsonStr = jsonStr.trim();
-
-            // 不完全なJSONの場合、最後の } までを探す
-            if (!jsonStr.endsWith('}')) {
-                const lastBraceIndex = jsonStr.lastIndexOf('}');
-                if (lastBraceIndex > 0) {
-                    jsonStr = jsonStr.substring(0, lastBraceIndex + 1);
-                }
-            }
-
-            const parsed = JSON.parse(jsonStr) as unknown;
-
-            // デートプランのJSONかどうかを判定
-            if (
-                parsed &&
-                typeof parsed === 'object' &&
-                'status' in parsed &&
-                (parsed.status === 'ok' || parsed.status === 'needs_clarification') &&
-                ('plans' in parsed || 'clarifying_questions' in parsed)
-            ) {
-                // plansが存在しない場合は空配列を設定
-                const parsedObj = parsed as Partial<DatePlanData>;
-                const result: DatePlanData = {
-                    status: parsedObj.status!,
-                    clarifying_questions: parsedObj.clarifying_questions,
-                    meta: parsedObj.meta,
-                    plans: Array.isArray(parsedObj.plans)
-                        ? (parsedObj.plans as DatePlan[])
-                        : [],
-                    markdown_summary: parsedObj.markdown_summary,
-                };
-                return result;
-            }
-        }
-    } catch (e) {
-        // JSON解析に失敗した場合はnullを返す
-        console.debug('Failed to parse date plan JSON:', e);
-    }
-    return null;
-}
 
 export function ChatResponseMessage({
     classNames,
@@ -108,11 +21,6 @@ export function ChatResponseMessage({
     const { availableLlmModels } = useAppState();
     const messageLlmModel =
         message && availableLlmModels?.find(({ model }) => model === message.model);
-
-    // デートプランのJSONを検出
-    const datePlanData: DatePlanData | null = message.content
-        ? tryParseDatePlanJson(message.content)
-        : null;
 
     return (
         <div className="my-3 py-3" data-testid="chat-response-message">
@@ -136,9 +44,6 @@ export function ChatResponseMessage({
                                     <p>{message.error}</p>
                                 </AlertDescription>
                             </Alert>
-                        ) : datePlanData ? (
-                            // デートプランのJSONが検出された場合は専用コンポーネントで表示
-                            <DatePlanDisplay data={datePlanData} />
                         ) : (
                             <MarkdownHooks
                                 remarkPlugins={[remarkGfm]}
