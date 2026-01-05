@@ -13,12 +13,61 @@ import rehypeMermaid from 'rehype-mermaid';
 import { DatePlanDisplay } from './date-plan-display';
 
 function tryParseDatePlanJson(content: string): any {
+    if (!content || typeof content !== 'string') {
+        return null;
+    }
+    
     try {
-        // JSON部分を抽出（マークダウンコードブロック内の可能性も考慮）
-        const jsonMatch = content.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/) || content.match(/\{[\s\S]*\}/);
+        // 1. マークダウンコードブロック内のJSONを検出（最優先）
+        let jsonMatch = content.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/);
+        
+        // 2. "json {" で始まる形式を検出（エージェントが直接出力した場合）
+        if (!jsonMatch) {
+            jsonMatch = content.match(/^json\s+(\{[\s\S]*\})/m);
+        }
+        
+        // 3. 行頭の "json " を除いたJSONオブジェクトを検出
+        if (!jsonMatch) {
+            jsonMatch = content.match(/^json\s+(\{[\s\S]*\})/m);
+        }
+        
+        // 4. 単純なJSONオブジェクトを検出（最後の手段）
+        if (!jsonMatch) {
+            // 最初の { から最後の } までを抽出（ネストされたJSONに対応）
+            const startIndex = content.indexOf('{');
+            if (startIndex !== -1) {
+                let braceCount = 0;
+                let endIndex = startIndex;
+                for (let i = startIndex; i < content.length; i++) {
+                    if (content[i] === '{') braceCount++;
+                    if (content[i] === '}') braceCount--;
+                    if (braceCount === 0) {
+                        endIndex = i;
+                        break;
+                    }
+                }
+                if (endIndex > startIndex) {
+                    jsonMatch = [content.substring(startIndex, endIndex + 1), content.substring(startIndex, endIndex + 1)];
+                }
+            }
+        }
+        
         if (jsonMatch) {
-            const jsonStr = jsonMatch[1] || jsonMatch[0];
+            let jsonStr = jsonMatch[1] || jsonMatch[0];
+            
+            // JSON文字列をクリーンアップ
+            jsonStr = jsonStr.trim();
+            
+            // 不完全なJSONの場合、最後の } までを探す
+            if (!jsonStr.endsWith('}')) {
+                const lastBraceIndex = jsonStr.lastIndexOf('}');
+                if (lastBraceIndex > 0) {
+                    jsonStr = jsonStr.substring(0, lastBraceIndex + 1);
+                }
+            }
+            
             const parsed = JSON.parse(jsonStr);
+            
             // デートプランのJSONかどうかを判定
             if (
                 parsed &&
@@ -31,6 +80,7 @@ function tryParseDatePlanJson(content: string): any {
         }
     } catch (e) {
         // JSON解析に失敗した場合はnullを返す
+        console.debug('Failed to parse date plan JSON:', e);
     }
     return null;
 }

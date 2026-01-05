@@ -411,9 +411,23 @@ class MyAgent:
                 }}
 
                 前のタスクの出力（検証済みプラン）と最初のタスクの出力（入力解析結果）を参照してください。
-                必ずJSON形式で出力し、markdown_summaryも含めてください。
+                
+                【最重要】出力形式：
+                必ず以下の形式で出力してください：
+                
+                ```json
+                {{
+                  "status": "ok",
+                  "meta": {{...}},
+                  "plans": [...],
+                  "markdown_summary": "..."
+                }}
+                ```
+                
+                上記の形式（マークダウンコードブロック）で出力してください。
+                "json"という文字列だけで始めるのではなく、必ず ```json と ``` で囲んでください。
             """).strip(),
-            expected_output="指定フォーマットに準拠したJSON（markdown_summaryを含む）",
+            expected_output="```json\n{...}\n``` の形式で出力されたJSON（markdown_summaryを含む）",
             agent=self.finalizer_agent,
         )
 
@@ -608,10 +622,19 @@ class MyAgent:
             # JSON部分を抽出（マークダウンコードブロック内の可能性も考慮）
             json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', response_text, re.DOTALL)
             if not json_match:
-                json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
+                # "json {" で始まる形式も検出
+                json_match = re.search(r'json\s+(\{.*?\})', response_text, re.DOTALL)
+            if not json_match:
+                # 単純なJSONオブジェクトを検出
+                json_match = re.search(r'(\{.*\})', response_text, re.DOTALL)
             
             if json_match:
                 json_str = json_match.group(1) if json_match.groups() else json_match.group()
+                # 不完全なJSONの場合、最後の } までを探す
+                if not json_str.strip().endswith('}'):
+                    last_brace = json_str.rfind('}')
+                    if last_brace > 0:
+                        json_str = json_str[:last_brace + 1]
                 parsed_json = json.loads(json_str)
                 
                 # 時刻検証を実行（plansが存在する場合）
@@ -651,10 +674,14 @@ class MyAgent:
                     # 最終的なJSONを再構築
                     json_output = json.dumps(parsed_json, ensure_ascii=False, indent=2)
                     
-                    # 最終出力：Markdown要約を先に表示し、その後にJSONをコードブロックで含める
-                    # フロントエンドがJSONを検出しやすいように
+                    # 最終出力：JSONをコードブロックで含める（Markdown要約はJSON内に含まれている）
+                    # フロントエンドがJSONを検出しやすいように、確実にコードブロック形式で出力
+                    response_text = f"```json\n{json_output}\n```"
+                    
+                    # Markdown要約も追加（JSONの後に）
                     markdown_summary = parsed_json.get('markdown_summary', '')
-                    response_text = f"{markdown_summary}\n\n```json\n{json_output}\n```"
+                    if markdown_summary:
+                        response_text = f"{response_text}\n\n{markdown_summary}"
                     
         except (json.JSONDecodeError, KeyError, AttributeError) as e:
             if self.verbose:
