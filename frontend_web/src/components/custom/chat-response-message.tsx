@@ -67,19 +67,24 @@ function tryParseDatePlanJson(content: string): DatePlanData | null {
                 }
             }
 
-            const parsed = JSON.parse(jsonStr);
+            const parsed = JSON.parse(jsonStr) as unknown;
 
             // デートプランのJSONかどうかを判定
             if (
                 parsed &&
                 typeof parsed === 'object' &&
+                'status' in parsed &&
                 (parsed.status === 'ok' || parsed.status === 'needs_clarification') &&
-                (parsed.plans || parsed.clarifying_questions)
+                ('plans' in parsed || 'clarifying_questions' in parsed)
             ) {
                 // plansが存在しない場合は空配列を設定
+                const parsedObj = parsed as Partial<DatePlanData>;
                 const result: DatePlanData = {
-                    ...parsed,
-                    plans: parsed.plans || [],
+                    status: parsedObj.status!,
+                    clarifying_questions: parsedObj.clarifying_questions,
+                    meta: parsedObj.meta,
+                    plans: Array.isArray(parsedObj.plans) ? parsedObj.plans : [],
+                    markdown_summary: parsedObj.markdown_summary,
                 };
                 return result;
             }
