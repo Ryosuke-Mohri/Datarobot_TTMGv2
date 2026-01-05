@@ -76,3 +76,22 @@ tasks:
     desc: "🚀 Deploy the infrastructure"
     cmds:
       - task infra:deploy
+
+  verify:
+    desc: "✅ Quick verification (build + lint checks) - Fast alternative to deploy"
+    cmds:
+      - echo "🔍 Running quick verification checks..."
+      - echo "1️⃣ Checking frontend build..."
+      - task frontend:build
+      - echo "2️⃣ Checking frontend lint..."
+      - task frontend:lint-check
+      - echo "3️⃣ Checking agent lint..."
+      - task agent:lint-check
+      - echo "✅ All checks passed! Ready for deployment."
+
+  verify-fast:
+    desc: "⚡ Ultra-fast verification (frontend build only) - ~30 seconds"
+    cmds:
+      - echo "⚡ Running fast verification (frontend build only)..."
+      - task frontend:build
+      - echo "✅ Frontend build check passed!"
