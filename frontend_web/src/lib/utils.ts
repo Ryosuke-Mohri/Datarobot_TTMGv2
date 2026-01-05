@@ -25,15 +25,7 @@ export function getBaseUrl() {
 }
 
 export function getApiUrl() {
-    // 開発環境では、Viteのプロキシを使用するため相対パスを返す
-    if (import.meta.env.DEV) {
-        const baseUrl = getBaseUrl();
-        // baseUrlが /notebook-sessions/.../ports/5173/ の場合、/notebook-sessions/.../ports/5173/api を返す
-        // Viteのプロキシがこれを /api に書き換えて http://localhost:8080/api にプロキシする
-        return `${baseUrl}api`;
-    }
-    // 本番環境では、フルURLを返す
-    return `${window.location.origin}${getBaseUrl()}api`;
+    return `${getBaseUrl()}api`;
 }
 
 export function unwrapMarkdownCodeBlock(message: string): string {

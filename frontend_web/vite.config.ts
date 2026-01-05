@@ -45,29 +45,10 @@ export default defineConfig({
         host: true,
         allowedHosts: ['localhost', '127.0.0.1', '.datarobot.com', '.drdev.io'],
         proxy: {
-            // プロキシ設定: /notebook-sessions/.../ports/5173/api/ を http://localhost:8080/api/ にプロキシ
             [`${proxyBase}api`]: {
                 target: 'http://localhost:8080',
                 changeOrigin: true,
-                rewrite: path => {
-                    // /notebook-sessions/.../ports/5173/api/v1/chat → /api/v1/chat
-                    const baseWithoutSlash = proxyBase.replace(/\/$/, '');
-                    // 正規表現で特殊文字をエスケープ
-                    const escapedBase = baseWithoutSlash.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                    const rewritten = path.replace(new RegExp(`^${escapedBase}/api`), '/api');
-                    if (process.env.NODE_ENV === 'development') {
-                        console.log('[Vite Proxy] Rewriting:', path, '→', rewritten);
-                    }
-                    return rewritten;
-                },
-                configure: proxy => {
-                    proxy.on('error', err => {
-                        console.error('[Vite Proxy Error]', err);
-                    });
-                    proxy.on('proxyReq', (proxyReq, req) => {
-                        console.log('[Vite Proxy] Proxying:', req.url, '→', proxyReq.path);
-                    });
-                },
+                rewrite: path => path.replace(new RegExp(`^${proxyBase.replace(/\/$/, '')}/api`), '/api'),
             },
         },
     },
