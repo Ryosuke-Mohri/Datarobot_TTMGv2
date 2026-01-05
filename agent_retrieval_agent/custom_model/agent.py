@@ -201,43 +201,67 @@ class MyAgent:
         return Task(
             name="Parse User Input",
             description=dedent("""
-                ユーザーの自然文入力から以下の必須項目を抽出してください：
+                ユーザーの自然文入力から情報を抽出し、積極的に補完してください。
 
-                必須項目：
-                - 集合場所（例：渋谷駅、東京タワー）
-                - 集合時間（日付と時刻、例：2025-01-15 14:00）
-                - 解散場所（例：新宿駅、同じ場所）
-                - 解散時間（日付と時刻）
-                - 予算（金額、例：10000円）
-                - 人数（例：2人）
-                - 関係性（恋人/夫婦/友人など）
-                - 年齢層（例：20代、30代）
-                - 食の制約（ベジタリアン、アレルギーなど）
-                - お酒（可/不可/どちらでも）
-                - 趣味嗜好（例：アート、音楽、スポーツ）
-                - 禁止事項（自由記述）
+                【最重要】積極的に補完すること：
+                - 日付が明示されない場合：必ず直近の未来日を補完する（今日のその時刻が過ぎていれば翌日、まだなら今日）
+                - 時刻のみ指定（例：「10時」）の場合：日付を補完して「YYYY-MM-DD 10:00」形式にする
+                - 食の制約が明示されない場合：「なし」または「特に制約なし」と補完
+                - 禁止事項が明示されない場合：「なし」または空配列と補完
+                - 年齢層が明示されない場合：入力から推測可能な場合は推測し、推測できない場合は「20代」をデフォルトとする
 
-                任意項目：
-                - 交通手段（徒歩/公共交通/車）
-                - 行動半径（例：徒歩15分圏内）
-                - 3案のラベル指定（例：「静かめ」「食べ歩き」）
-                - 雨天前提かどうか
+                本当に必須な項目（これらがないとプラン生成不可）：
+                - 集合場所
+                - 集合時間（時刻のみでも可、日付は補完する）
+                - 解散場所（「同じ場所」でも可）
+                - 解散時間（時刻のみでも可、日付は補完する）
+                - 予算（金額が分からない場合は「10000円」をデフォルトとする）
 
-                日付・時刻の補完ルール：
-                - 日付が明示されない場合：直近の未来日を採用（今日のその時刻が過ぎていれば翌日、まだなら今日）
-                - 時刻が曖昧（例：「夕方」）の場合：確認質問を生成
-                - 最終出力は YYYY-MM-DD HH:mm 形式（タイムゾーン +09:00）
+                推測可能な項目（明示されなくても推測・補完する）：
+                - 人数：文脈から推測（「2人で」など）、推測できない場合は「2人」をデフォルト
+                - 関係性：文脈から推測（「恋人」「友人」など）、推測できない場合は「友人」をデフォルト
+                - 年齢層：文脈から推測、推測できない場合は「20代」をデフォルト
+                - 食の制約：明示されない場合は「なし」と補完
+                - お酒：明示されない場合は「可」をデフォルト
+                - 趣味嗜好：文脈から推測、推測できない場合は空配列
+                - 禁止事項：明示されない場合は空配列
 
-                出力形式：
-                - すべての必須項目が抽出できた場合：JSON形式で構造化データを返す
-                - 必須項目が不足している場合：1〜3個の確認質問をリスト形式で返す（status: needs_clarification）
+                任意項目（あれば抽出、なければデフォルト）：
+                - 交通手段：明示されない場合は「unspecified」
+                - 行動半径：明示されない場合は空文字
+                - 3案のラベル指定：あれば抽出
+                - 雨天前提：あれば抽出
+
+                確認質問を返すのは以下の場合のみ：
+                - 集合場所が全く分からない場合
+                - 集合時間が全く分からない場合（「夕方」などの曖昧な表現のみで、補完できない場合）
+                - 解散場所が全く分からない場合
+                - 解散時間が全く分からない場合（「夜」などの曖昧な表現のみで、補完できない場合）
+
+                出力形式（JSON）：
+                {{
+                  "status": "ok",
+                  "meetup_location": "...",
+                  "meetup_time": "YYYY-MM-DD HH:mm",  // 必ず日付付きで補完
+                  "breakup_location": "...",
+                  "breakup_time": "YYYY-MM-DD HH:mm",  // 必ず日付付きで補完
+                  "budget_jpy": 10000,
+                  "people_count": 2,
+                  "relationship": "...",
+                  "age_range": "...",
+                  "dietary_restrictions": "なし",
+                  "alcohol": "可",
+                  "interests": ["..."],
+                  "prohibitions": [],
+                  "transport_mode": "unspecified",
+                  "radius_hint": "",
+                  "plan_labels": [],
+                  "rainy_day": false
+                }}
 
                 入力文："{user_input}"
             """).strip(),
-            expected_output=(
-                "JSON形式の構造化データ（必須項目が揃っている場合）"
-                "または確認質問のリスト（必須項目が不足している場合）"
-            ),
+            expected_output="JSON形式の構造化データ（積極的に補完した結果）",
             agent=self.input_parser_agent,
         )
 
@@ -246,30 +270,51 @@ class MyAgent:
         return Task(
             name="Generate 3 Date Plans",
             description=dedent("""
-                前のタスクで抽出された情報を基に、3つの異なるコンセプトのデートプランを生成してください。
+                前のタスクで抽出・補完された情報を基に、3つの異なるコンセプトのデートプランを生成してください。
+
+                前のタスクの出力は以下の形式です：
+                {{
+                  "status": "ok",
+                  "meetup_location": "...",
+                  "meetup_time": "YYYY-MM-DD HH:mm",
+                  "breakup_location": "...",
+                  "breakup_time": "YYYY-MM-DD HH:mm",
+                  "budget_jpy": 10000,
+                  "people_count": 2,
+                  "relationship": "...",
+                  "age_range": "...",
+                  "dietary_restrictions": "...",
+                  "alcohol": "...",
+                  "interests": ["..."],
+                  "prohibitions": [],
+                  "transport_mode": "...",
+                  "radius_hint": "",
+                  "plan_labels": [],
+                  "rainy_day": false
+                }}
 
                 必須要件：
                 1. 必ず3案を生成する
                 2. 各案は明確に異なるコンセプトを持つ（例：rainy_day、indoor_heavy、active）
-                3. ユーザーがラベル指定した場合は、そのラベルで3案を置換（ただし内容はそれに合わせる）
+                3. plan_labelsが指定されている場合は、そのラベルで3案を置換（ただし内容はそれに合わせる）
                 4. 各行程要素（itinerary）には必ず以下を含める：
-                   - start: YYYY-MM-DD HH:mm（30分単位）
-                   - end: YYYY-MM-DD HH:mm（30分単位）
+                   - start: YYYY-MM-DD HH:mm（30分単位、meetup_timeから開始）
+                   - end: YYYY-MM-DD HH:mm（30分単位、breakup_timeで終了）
                    - type: meetup/move/meal/cafe/activity/shopping/rest/breakup/other
                    - name: 場所・店名
                    - area: エリア名
                    - notes: 補足説明
-                   - links: {
+                   - links: {{
                        google_maps_search_url: （必須、GoogleMapsSearchUrlToolツールを使用して生成）
                        web_search_url: （任意、WebSearchUrlToolを使用）
                        image_search_url: （任意、ImageSearchUrlToolを使用）
-                     }
-                5. 集合時間・解散時間を厳守（最初のstartが集合時間、最後のendが解散時間）
+                     }}
+                5. 集合時間・解散時間を厳守（最初のstartがmeetup_time、最後のendがbreakup_time）
                 6. 全行程が連続（ギャップなし/重複なし）
 
-                予算、制約、禁止事項を必ず考慮してください。
+                予算、制約、禁止事項、趣味嗜好を必ず考慮してください。
 
-                前のタスクの出力（抽出された情報）を参照してください。
+                前のタスクの出力を参照して、3案のデートプランを生成してください。
             """).strip(),
             expected_output="3案のデートプランを含むJSON構造（各案にitinerary配列を含む）",
             agent=self.plan_generator_agent,
@@ -311,18 +356,23 @@ class MyAgent:
             description=dedent("""
                 前のタスクで検証済みのプランを最終的な出力形式に変換してください。
 
+                最初のタスク（入力解析）の出力から以下の情報を取得してください：
+                - meetup_time, breakup_time → meta.meetup_time, meta.breakup_time
+                - transport_mode → meta.transport_mode
+                - radius_hint → meta.radius_hint
+                - meetup_timeの日付部分 → meta.assumed_date
+
                 出力フォーマット（厳守）：
                 {{
-                  "status": "ok" | "needs_clarification",
-                  "clarifying_questions": ["..."],  // needs_clarification のときのみ
+                  "status": "ok",
                   "meta": {{
-                    "assumed_date": "YYYY-MM-DD",
+                    "assumed_date": "YYYY-MM-DD",  // meetup_timeから抽出
                     "timezone": "+09:00",
                     "rounding_minutes": 30,
                     "transport_mode": "walk"|"transit"|"car"|"unspecified",
                     "radius_hint": "...",
-                    "meetup_time": "YYYY-MM-DD HH:mm",
-                    "breakup_time": "YYYY-MM-DD HH:mm"
+                    "meetup_time": "YYYY-MM-DD HH:mm",  // 最初のタスクから取得
+                    "breakup_time": "YYYY-MM-DD HH:mm"  // 最初のタスクから取得
                   }},
                   "plans": [
                     {{
@@ -360,7 +410,7 @@ class MyAgent:
                   // ## 注意点（制約・禁止事項・確認事項）
                 }}
 
-                前のタスクの出力（検証済みプラン）を参照してください。
+                前のタスクの出力（検証済みプラン）と最初のタスクの出力（入力解析結果）を参照してください。
                 必ずJSON形式で出力し、markdown_summaryも含めてください。
             """).strip(),
             expected_output="指定フォーマットに準拠したJSON（markdown_summaryを含む）",
@@ -593,17 +643,18 @@ class MyAgent:
                             meta["breakup_time"] = breakup_time
                         parsed_json["meta"] = meta
                     
-                    # 最終的なJSONを再構築（Markdown要約も含める）
-                    json_output = json.dumps(parsed_json, ensure_ascii=False, indent=2)
-                    
                     # Markdown要約が既にある場合はそのまま、ない場合は生成
                     if "markdown_summary" not in parsed_json or not parsed_json["markdown_summary"]:
                         markdown = self._generate_markdown_summary(parsed_json)
                         parsed_json["markdown_summary"] = markdown
-                        json_output = json.dumps(parsed_json, ensure_ascii=False, indent=2)
                     
-                    # 最終出力：JSON + Markdown（両方を含む）
-                    response_text = f"{json_output}\n\n---\n\n{parsed_json.get('markdown_summary', '')}"
+                    # 最終的なJSONを再構築
+                    json_output = json.dumps(parsed_json, ensure_ascii=False, indent=2)
+                    
+                    # 最終出力：Markdown要約を先に表示し、その後にJSONをコードブロックで含める
+                    # フロントエンドがJSONを検出しやすいように
+                    markdown_summary = parsed_json.get('markdown_summary', '')
+                    response_text = f"{markdown_summary}\n\n```json\n{json_output}\n```"
                     
         except (json.JSONDecodeError, KeyError, AttributeError) as e:
             if self.verbose:
