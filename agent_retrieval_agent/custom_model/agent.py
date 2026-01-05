@@ -16,13 +16,10 @@ import os
 import re
 from datetime import datetime, timedelta
 from textwrap import dedent
-from typing import Any, Dict, List, Optional, Union
-from urllib.parse import quote_plus
+from typing import Any, Dict, Optional, Union
 
-import models
 from config import Config
 from crewai import LLM, Agent, Crew, CrewOutput, Task
-from flask import json as flask_json
 from helpers import CrewAIEventListener, create_inputs_from_completion_params
 from openai.types.chat import CompletionCreateParams
 from ragas.messages import AIMessage
@@ -276,7 +273,6 @@ class MyAgent:
             """).strip(),
             expected_output="3案のデートプランを含むJSON構造（各案にitinerary配列を含む）",
             agent=self.plan_generator_agent,
-            context=[self.task_parse_input],
         )
 
     @property
@@ -306,7 +302,6 @@ class MyAgent:
             """).strip(),
             expected_output="検証・調整済みのプラン（checksオブジェクト付き）",
             agent=self.validator_agent,
-            context=[self.task_generate_plans],
         )
 
     @property
@@ -370,7 +365,6 @@ class MyAgent:
             """).strip(),
             expected_output="指定フォーマットに準拠したJSON（markdown_summaryを含む）",
             agent=self.finalizer_agent,
-            context=[self.task_validate_and_adjust],
         )
 
     def crew(self) -> Crew:

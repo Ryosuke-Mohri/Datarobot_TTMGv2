@@ -327,7 +327,7 @@ class GoogleMapsSearchUrlToolSchema(BaseModel):
 
 class GoogleMapsSearchUrlTool(BaseTool):  # type: ignore[misc]
     name: str = "Generate Google Maps Search URL"
-    description: (
+    description: str = (
         "Google Mapsの検索URLを生成します。外部HTTPアクセスは行いません。"
         "場所名や住所をクエリとして受け取り、Google Mapsの検索URLを返します。"
     )
@@ -347,7 +347,7 @@ class WebSearchUrlToolSchema(BaseModel):
 
 class WebSearchUrlTool(BaseTool):  # type: ignore[misc]
     name: str = "Generate Web Search URL"
-    description: (
+    description: str = (
         "Web検索のURLを生成します。外部HTTPアクセスは行いません。"
         "検索クエリを受け取り、Google検索のURLを返します。"
     )
@@ -367,7 +367,7 @@ class ImageSearchUrlToolSchema(BaseModel):
 
 class ImageSearchUrlTool(BaseTool):  # type: ignore[misc]
     name: str = "Generate Image Search URL"
-    description: (
+    description: str = (
         "画像検索のURLを生成します。外部HTTPアクセスは行いません。"
         "検索クエリを受け取り、Google画像検索のURLを返します。"
     )
