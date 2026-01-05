@@ -110,7 +110,9 @@ export function ChatResponseMessage({
         message && availableLlmModels?.find(({ model }) => model === message.model);
 
     // デートプランのJSONを検出
-    const datePlanData = message.content ? tryParseDatePlanJson(message.content) : null;
+    const datePlanData: DatePlanData | null = message.content
+        ? tryParseDatePlanJson(message.content)
+        : null;
 
     return (
         <div className="my-3 py-3" data-testid="chat-response-message">
